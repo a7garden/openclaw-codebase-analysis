@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>infra hooks tasks</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      line-height: 1.6;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px;
+      color: #333;
+    }
+    .sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 250px;
+      height: 100vh;
+      background: #f8f9fa;
+      border-right: 1px solid #ddd;
+      padding: 20px;
+      overflow-y: auto;
+    }
+    .sidebar h3 { margin-top: 0; color: #4f46e5; }
+    .sidebar ul { list-style: none; padding: 0; }
+    .sidebar li { margin: 8px 0; }
+    .sidebar a { color: #333; text-decoration: none; font-size: 14px; }
+    .sidebar a:hover { color: #4f46e5; }
+    .content { margin-left: 270px; padding: 20px; }
+    pre { background: #1f2937; color: #e5e7eb; padding: 15px; border-radius: 8px; overflow-x: auto; }
+    code { background: #e5e7eb; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+    pre code { background: transparent; color: inherit; }
+    blockquote { border-left: 4px solid #4f46e5; background: #f9fafb; padding: 10px 20px; margin: 1em 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+    th { background: #f3f4f6; }
+    h1, h2, h3 { color: #1f2937; }
+    .home-link { font-size: 24px; font-weight: bold; color: #4f46e5; text-decoration: none; }
+    a { color: #4f46e5; }
+    @media (max-width: 768px) {
+      .sidebar { position: static; width: 100%; height: auto; border-right: none; border-bottom: 1px solid #ddd; }
+      .content { margin-left: 0; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="sidebar">
+    <h3><a href="/" class="home-link">OpenClaw</a></h3>
+    <ul>
+  <li><a href="/01-overview">01 - overview</a></li>
+  <li><a href="/02-plugin-system">02 - plugin system</a></li>
+  <li><a href="/03-channel-system">03 - channel system</a></li>
+  <li><a href="/04-provider-system">04 - provider system</a></li>
+  <li><a href="/05-gateway-protocol">05 - gateway protocol</a></li>
+  <li><a href="/06-agent-system">06 - agent system</a></li>
+  <li><a href="/07-acp">07 - acp</a></li>
+  <li><a href="/08-config-system">08 - config system</a></li>
+  <li><a href="/09-memory-system">09 - memory system</a></li>
+  <li><a href="/10-ui-frontend">10 - ui frontend</a></li>
+  <li><a href="/11-tui">11 - tui</a></li>
+  <li><a href="/12-mobile-apps">12 - mobile apps</a></li>
+  <li><a href="/13-bundled-plugins">13 - bundled plugins</a></li>
+  <li><a href="/14-packages">14 - packages</a></li>
+  <li><a href="/15-cli-daemon">15 - cli daemon</a></li>
+  <li><a href="/16-testing">16 - testing</a></li>
+  <li><a href="/17-acp-deep-dive">17 - acp deep dive</a></li>
+  <li><a href="/18-infra-hooks-tasks">18 - infra hooks tasks</a></li>
+  <li><a href="/19-vendor-skills-python">19 - vendor skills python</a></li>
+  <li><a href="/20-plugin-loader-deep-dive">20 - plugin loader deep dive</a></li>
+  <li><a href="/21-channel-deep-dive">21 - channel deep dive</a></li>
+  <li><a href="/22-embedded-runner-deep-dive">22 - embedded runner deep dive</a></li>
+  <li><a href="/23-gateway-server-methods">23 - gateway server methods</a></li>
+  <li><a href="/24-telegram-extension">24 - telegram extension</a></li>
+    </ul>
+  </nav>
+  <main class="content">
+    <h1>Infrastructure, Hooks &amp; Tasks Deep Dive</h1>
+<blockquote>
+<p><em>Part of the OpenClaw Architecture Analysis — see <a href="./01-overview.md">01-overview.md</a></em></p>
+</blockquote>
+<hr>
+<h2>1. Infrastructure Layer (<code>src/infra/</code>)</h2>
+<h3>1.1 Error Handling (<code>src/infra/errors.ts</code>)</h3>
+<pre><code class="language-typescript">formatErrorMessage(error)   // Extracts nested .cause chains
+detectErrorKind(error)      // → &quot;refusal&quot; | &quot;timeout&quot; | &quot;rate_limit&quot; | &quot;context_length&quot;
+hasErrnoCode(error)          // Node.js errno check
+isErrno(error)              // Node.js errno classification
+</code></pre>
+<p>Uses <code>redactSensitiveText()</code> for security-safe error messages.</p>
+<h3>1.2 Retry Logic (<code>src/infra/retry.ts</code>)</h3>
+<pre><code class="language-typescript">retryAsync&lt;T&gt;({
+  attempts: number,
+  delayMs: number,
+  backoff?: BackoffPolicy,
+  shouldRetry?: (error, attempt) =&gt; boolean,
+  retryAfterMs?: (error) =&gt; number,
+  onRetry?: (error, attempt) =&gt; void,
+})
+</code></pre>
+<p>Backoff with cryptographic jitter via <code>generateSecureFraction()</code>.</p>
+<h3>1.3 Deduplication Cache (<code>src/infra/dedupe.ts</code>)</h3>
+<pre><code class="language-typescript">createDedupeCache({ ttlMs, maxSize })
+// Global singleton via resolveGlobalDedupeCache()
+</code></pre>
+<h3>1.4 Heartbeat Runner (<code>src/infra/heartbeat-runner.ts</code>) — 1500+ lines</h3>
+<pre><code class="language-typescript">startHeartbeatRunner()      // Periodic agent heartbeat scheduler
+runHeartbeatOnce()          // Single heartbeat execution
+// Handles: active hours, session isolation, task batching from HEARTBEAT.md
+// Delivery: resolves channel targets, sends outbound payloads
+// Deduplication: skips duplicate payloads within 24h window
+</code></pre>
+<h3>1.5 Agent Events (<code>src/infra/agent-events.ts</code>)</h3>
+<pre><code class="language-typescript">emitAgentEvent({
+  runId, seq, stream, ts, data, sessionKey
+})
+// Streams: lifecycle, tool, assistant, error, item, plan, approval, command_output, patch, compaction, thinking
+</code></pre>
+<h3>1.6 System Events (<code>src/infra/system-events.ts</code>)</h3>
+<p>Lightweight in-memory queue for ephemeral system events prefixed to next prompt:</p>
+<pre><code class="language-typescript">enqueueSystemEvent()
+peekSystemEventEntries()
+consumeSystemEventEntries()
+</code></pre>
+<h3>1.7 Key Files</h3>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Lines</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>src/infra/errors.ts</code></td>
+<td>~100</td>
+<td>Error formatting, classification</td>
+</tr>
+<tr>
+<td><code>src/infra/retry.ts</code></td>
+<td>~150</td>
+<td>Async retry with backoff</td>
+</tr>
+<tr>
+<td><code>src/infra/dedupe.ts</code></td>
+<td>~80</td>
+<td>TTL-based deduplication cache</td>
+</tr>
+<tr>
+<td><code>src/infra/json-file.ts</code></td>
+<td>~100</td>
+<td>Atomic JSON read/write</td>
+</tr>
+<tr>
+<td><code>src/infra/secret-file.ts</code></td>
+<td>~80</td>
+<td>Secure secret handling, 0o600 permissions</td>
+</tr>
+<tr>
+<td><code>src/infra/fs-safe.ts</code></td>
+<td>~150</td>
+<td>Boundary-constrained file ops (O_NOFOLLOW)</td>
+</tr>
+<tr>
+<td><code>src/infra/heartbeat-runner.ts</code></td>
+<td>1500+</td>
+<td>Periodic heartbeat scheduler</td>
+</tr>
+<tr>
+<td><code>src/infra/agent-events.ts</code></td>
+<td>~100</td>
+<td>Global agent event bus</td>
+</tr>
+<tr>
+<td><code>src/infra/system-events.ts</code></td>
+<td>~50</td>
+<td>Ephemeral system event queue</td>
+</tr>
+<tr>
+<td><code>src/infra/abort-signal.ts</code></td>
+<td>~30</td>
+<td>Promise-based abort signal waiting</td>
+</tr>
+<tr>
+<td><code>src/infra/backoff.ts</code></td>
+<td>~50</td>
+<td>Backoff computation</td>
+</tr>
+<tr>
+<td><code>src/infra/archive.ts</code></td>
+<td>~150</td>
+<td>Zip/tar extraction with limits</td>
+</tr>
+<tr>
+<td><code>src/infra/bonjour-discovery.ts</code></td>
+<td>~100</td>
+<td>mDNS service discovery</td>
+</tr>
+<tr>
+<td><code>src/infra/push-apns.ts</code></td>
+<td>~150</td>
+<td>Apple push notifications</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>2. Hooks System (<code>src/hooks/</code>)</h2>
+<h3>2.1 Hook Types</h3>
+<pre><code class="language-typescript">type InternalHookEventType = &quot;command&quot; | &quot;session&quot; | &quot;agent&quot; | &quot;gateway&quot; | &quot;message&quot;
+type InternalHookHandler = (event: InternalHookEvent) =&gt; Promise&lt;void&gt; | void
+</code></pre>
+<h3>2.2 Hook Registration</h3>
+<pre><code class="language-typescript">registerInternalHook(eventKey: string, handler: InternalHookHandler)
+unregisterInternalHook(eventKey: string, handler: InternalHookHandler)
+triggerInternalHook(event: InternalHookEvent)
+hasInternalHookListeners(type, action)
+</code></pre>
+<p>Uses global singleton Map sharing across chunks.</p>
+<h3>2.3 Hook Sources</h3>
+<table>
+<thead>
+<tr>
+<th>Source</th>
+<th>Location</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>openclaw-bundled</code></td>
+<td><code>src/hooks/bundled/</code></td>
+</tr>
+<tr>
+<td><code>openclaw-managed</code></td>
+<td><code>~/.openclaw/hooks/</code></td>
+</tr>
+<tr>
+<td><code>openclaw-workspace</code></td>
+<td>Workspace hooks</td>
+</tr>
+<tr>
+<td><code>openclaw-plugin</code></td>
+<td>Plugin-registered hooks</td>
+</tr>
+</tbody></table>
+<h3>2.4 Bundled Hooks (<code>src/hooks/bundled/</code>)</h3>
+<p><strong>session-memory</strong> — Saves session context to <code>memory/</code> on <code>/new</code> or <code>/reset</code>:</p>
+<ul>
+<li>Generates LLM-based slugs for filenames</li>
+<li>Reads previous session transcripts for context</li>
+<li>Writes markdown files with conversation summaries</li>
+</ul>
+<p><strong>command-logger</strong> — Logs command executions
+<strong>boot-md</strong> — Gateway startup hook
+<strong>bootstrap-extra-files</strong> — File bootstrap hook</p>
+<h3>2.5 Hook Installation (<code>src/hooks/install.ts</code>)</h3>
+<pre><code class="language-typescript">installHooksFromArchive()
+installHooksFromNpmSpec(spec)   // npm install + HOOK.md validation
+installHooksFromPath(path)
+resolveHookInstallDir()          // ~/.openclaw/hooks/&lt;hookName&gt;
+</code></pre>
+<h3>2.6 Hook Metadata Schema</h3>
+<pre><code class="language-typescript">type OpenClawHookMetadata = {
+  always?: boolean
+  hookKey?: string
+  events: string[]  // [&quot;command:new&quot;, &quot;session:start&quot;]
+  export?: string  // export name, default &quot;default&quot;
+  os?: string[]
+  requires?: { bins?: string[]; anyBins?: string[]; env?: string[]; config?: string[] }
+  install?: HookInstallSpec[]
+}
+</code></pre>
+<h3>2.7 Key Files</h3>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Lines</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>src/hooks/internal-hook-types.ts</code></td>
+<td>~100</td>
+<td>Hook event/handler types</td>
+</tr>
+<tr>
+<td><code>src/hooks/internal-hooks.ts</code></td>
+<td>~500</td>
+<td>Hook registration and triggering</td>
+</tr>
+<tr>
+<td><code>src/hooks/loader.ts</code></td>
+<td>~200</td>
+<td>Dynamic hook loading from directories</td>
+</tr>
+<tr>
+<td><code>src/hooks/install.ts</code></td>
+<td>~200</td>
+<td>Hook installation from npm/archive/path</td>
+</tr>
+<tr>
+<td><code>src/hooks/types.ts</code></td>
+<td>~100</td>
+<td>Hook metadata schema</td>
+</tr>
+<tr>
+<td><code>src/hooks/module-loader.ts</code></td>
+<td>~100</td>
+<td>Handler module resolution</td>
+</tr>
+<tr>
+<td><code>src/hooks/bundled/session-memory/handler.ts</code></td>
+<td>~200</td>
+<td>Session memory preservation</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>3. Tasks System (<code>src/tasks/</code>)</h2>
+<h3>3.1 Task vs Agent</h3>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>Task</th>
+<th>Agent</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Lifecycle</td>
+<td>Background, detached</td>
+<td>Interactive, session-bound</td>
+</tr>
+<tr>
+<td>Delivery</td>
+<td>Delivery semantics with retry</td>
+<td>Real-time conversation</td>
+</tr>
+<tr>
+<td>Parent-child</td>
+<td>Flow orchestration with <code>parentFlowId</code></td>
+<td>No parent-child</td>
+</tr>
+<tr>
+<td>Notification</td>
+<td><code>notifyPolicy</code> controls visibility</td>
+<td>Always visible</td>
+</tr>
+<tr>
+<td>Runtimes</td>
+<td><code>subagent</code>, <code>acp</code>, <code>cli</code>, <code>cron</code></td>
+<td>Interactive gateway sessions</td>
+</tr>
+</tbody></table>
+<h3>3.2 Task Registry</h3>
+<pre><code class="language-typescript">// In-memory store with SQLite persistence at ~/.openclaw/tasks.db
+type TaskStatus =
+  | &quot;queued&quot; | &quot;running&quot; | &quot;succeeded&quot; | &quot;failed&quot;
+  | &quot;timed_out&quot; | &quot;cancelled&quot; | &quot;lost&quot;
+
+type TaskRuntime = &quot;subagent&quot; | &quot;acp&quot; | &quot;cli&quot; | &quot;cron&quot;
+type TaskDeliveryStatus = &quot;pending&quot; | &quot;delivered&quot; | &quot;session_queued&quot; | &quot;failed&quot; | &quot;parent_missing&quot;
+type TaskNotifyPolicy = &quot;done_only&quot; | &quot;state_changes&quot; | &quot;silent&quot;
+
+// Indexes: taskIdsByRunId, taskIdsByOwnerKey, taskIdsByParentFlowId, taskIdsByRelatedSessionKey
+</code></pre>
+<h3>3.3 Task Flow Registry</h3>
+<pre><code class="language-typescript">// Parent containers for related tasks
+type TaskFlowStatus = &quot;queued&quot; | &quot;running&quot; | &quot;waiting&quot; | &quot;blocked&quot; | &quot;succeeded&quot; | &quot;failed&quot; | &quot;cancelled&quot; | &quot;lost&quot;
+type TaskFlowSyncMode = &quot;managed&quot; | &quot;task_mirrored&quot;
+
+// CAS-style revision-based concurrency control
+updateFlowRecordByIdExpectedRevision(revision, updates)
+</code></pre>
+<h3>3.4 Task Executor</h3>
+<pre><code class="language-typescript">createQueuedTaskRun(params)      // Create new task
+startTaskRunByRunId(params)      // Start running
+recordTaskRunProgressByRunId(params)
+completeTaskRunByRunId(params)
+failTaskRunByRunId(params)
+cancelTaskById(id)
+</code></pre>
+<h3>3.5 Delivery Policy</h3>
+<pre><code class="language-typescript">shouldAutoDeliverTaskTerminalUpdate(policy, taskRecord)
+shouldAutoDeliverTaskStateChange(policy, taskRecord)
+formatTaskTerminalMessage(taskRecord)
+formatTaskStateChangeMessage(taskRecord)
+shouldSuppressDuplicateTerminalDelivery()
+</code></pre>
+<h3>3.6 Task Registry Store (SQLite)</h3>
+<pre><code class="language-typescript">~/.openclaw/tasks.db
+// upsertTask, deleteTask, loadSnapshot, saveSnapshot
+// Observer pattern for event notifications
+</code></pre>
+<h3>3.7 Key Files</h3>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Lines</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>src/tasks/task-registry.ts</code></td>
+<td>2000+</td>
+<td>In-memory task store with CRUD</td>
+</tr>
+<tr>
+<td><code>src/tasks/task-registry.types.ts</code></td>
+<td>~200</td>
+<td>Task/status/delivery types</td>
+</tr>
+<tr>
+<td><code>src/tasks/task-executor.ts</code></td>
+<td>~300</td>
+<td>Task lifecycle operations</td>
+</tr>
+<tr>
+<td><code>src/tasks/task-flow-registry.ts</code></td>
+<td>680+</td>
+<td>Parent flow management</td>
+</tr>
+<tr>
+<td><code>src/tasks/detached-task-runtime.ts</code></td>
+<td>~100</td>
+<td>Plugin task runtime registration</td>
+</tr>
+<tr>
+<td><code>src/tasks/task-executor-policy.ts</code></td>
+<td>~100</td>
+<td>Delivery and notification policies</td>
+</tr>
+<tr>
+<td><code>src/tasks/task-registry.store.sqlite.ts</code></td>
+<td>~200</td>
+<td>SQLite persistence</td>
+</tr>
+<tr>
+<td><code>src/tasks/task-registry.store.ts</code></td>
+<td>~100</td>
+<td>Store interface</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>4. Key Architectural Insights</h2>
+<h3>4.1 Global Singletons</h3>
+<p>Both hooks and tasks use global singletons for cross-chunk compatibility:</p>
+<ul>
+<li><code>resolveGlobalSingleton()</code> for hook runner</li>
+<li><code>resolveGlobalDedupeCache()</code> for deduplication</li>
+</ul>
+<h3>4.2 Safe File Operations</h3>
+<p>All file operations use:</p>
+<ul>
+<li><code>O_NOFOLLOW</code> flag to prevent symlink attacks</li>
+<li><code>0o600</code> permissions for secrets</li>
+<li>Atomic write with temp file + rename</li>
+<li>Boundary-constrained paths (stays within root)</li>
+</ul>
+<h3>4.3 Retry Strategy</h3>
+<p>Retry uses <strong>cryptographic jitter</strong> (<code>generateSecureFraction()</code>) rather than predictable random, preventing thundering herd on shared failures.</p>
+<h3>4.4 Heartbeat-Driven Automation</h3>
+<p>The heartbeat runner (<code>heartbeat-runner.ts:1500+</code>) is the backbone of periodic automation:</p>
+<ul>
+<li>Resolves channel targets from <code>HEARTBEAT.md</code></li>
+<li>Deduplicates payloads within 24h window</li>
+<li>Sessions isolated per heartbeat delivery</li>
+</ul>
+<h3>4.5 Task Flow Revision Control</h3>
+<p>Task flows use <strong>CAS (compare-and-swap) revision</strong> to prevent lost updates when multiple processes update the same flow simultaneously.</p>
+
+  </main>
+</body>
+</html>

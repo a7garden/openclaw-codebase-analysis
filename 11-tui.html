@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>tui</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      line-height: 1.6;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px;
+      color: #333;
+    }
+    .sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 250px;
+      height: 100vh;
+      background: #f8f9fa;
+      border-right: 1px solid #ddd;
+      padding: 20px;
+      overflow-y: auto;
+    }
+    .sidebar h3 { margin-top: 0; color: #4f46e5; }
+    .sidebar ul { list-style: none; padding: 0; }
+    .sidebar li { margin: 8px 0; }
+    .sidebar a { color: #333; text-decoration: none; font-size: 14px; }
+    .sidebar a:hover { color: #4f46e5; }
+    .content { margin-left: 270px; padding: 20px; }
+    pre { background: #1f2937; color: #e5e7eb; padding: 15px; border-radius: 8px; overflow-x: auto; }
+    code { background: #e5e7eb; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+    pre code { background: transparent; color: inherit; }
+    blockquote { border-left: 4px solid #4f46e5; background: #f9fafb; padding: 10px 20px; margin: 1em 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+    th { background: #f3f4f6; }
+    h1, h2, h3 { color: #1f2937; }
+    .home-link { font-size: 24px; font-weight: bold; color: #4f46e5; text-decoration: none; }
+    a { color: #4f46e5; }
+    @media (max-width: 768px) {
+      .sidebar { position: static; width: 100%; height: auto; border-right: none; border-bottom: 1px solid #ddd; }
+      .content { margin-left: 0; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="sidebar">
+    <h3><a href="/" class="home-link">OpenClaw</a></h3>
+    <ul>
+  <li><a href="/01-overview">01 - overview</a></li>
+  <li><a href="/02-plugin-system">02 - plugin system</a></li>
+  <li><a href="/03-channel-system">03 - channel system</a></li>
+  <li><a href="/04-provider-system">04 - provider system</a></li>
+  <li><a href="/05-gateway-protocol">05 - gateway protocol</a></li>
+  <li><a href="/06-agent-system">06 - agent system</a></li>
+  <li><a href="/07-acp">07 - acp</a></li>
+  <li><a href="/08-config-system">08 - config system</a></li>
+  <li><a href="/09-memory-system">09 - memory system</a></li>
+  <li><a href="/10-ui-frontend">10 - ui frontend</a></li>
+  <li><a href="/11-tui">11 - tui</a></li>
+  <li><a href="/12-mobile-apps">12 - mobile apps</a></li>
+  <li><a href="/13-bundled-plugins">13 - bundled plugins</a></li>
+  <li><a href="/14-packages">14 - packages</a></li>
+  <li><a href="/15-cli-daemon">15 - cli daemon</a></li>
+  <li><a href="/16-testing">16 - testing</a></li>
+  <li><a href="/17-acp-deep-dive">17 - acp deep dive</a></li>
+  <li><a href="/18-infra-hooks-tasks">18 - infra hooks tasks</a></li>
+  <li><a href="/19-vendor-skills-python">19 - vendor skills python</a></li>
+  <li><a href="/20-plugin-loader-deep-dive">20 - plugin loader deep dive</a></li>
+  <li><a href="/21-channel-deep-dive">21 - channel deep dive</a></li>
+  <li><a href="/22-embedded-runner-deep-dive">22 - embedded runner deep dive</a></li>
+  <li><a href="/23-gateway-server-methods">23 - gateway server methods</a></li>
+  <li><a href="/24-telegram-extension">24 - telegram extension</a></li>
+    </ul>
+  </nav>
+  <main class="content">
+    <h1>Terminal UI (TUI) Architecture</h1>
+<blockquote>
+<p><em>Part of the OpenClaw Architecture Analysis — see <a href="./01-overview.md">01-overview.md</a></em></p>
+</blockquote>
+<hr>
+<h2>1. Overview</h2>
+<p>The Terminal UI (<code>src/tui/</code>) is a CLI-based interface for interacting with OpenClaw, built with <code>@mariozechner/pi-tui</code>. It is <strong>separate from <code>ui/</code></strong> (the web UI) — they share the gateway protocol client but use completely different rendering systems.</p>
+<hr>
+<h2>2. Framework</h2>
+<p><strong>Library:</strong> <code>@mariozechner/pi-tui</code></p>
+<p>A third-party TUI library providing:</p>
+<ul>
+<li><code>Container</code> — layout container</li>
+<li><code>Text</code> — text rendering</li>
+<li><code>ProcessTerminal</code> — terminal control</li>
+<li><code>Key</code> — keyboard input</li>
+<li><code>Loader</code> — loading indicators</li>
+<li><code>CombinedAutocompleteProvider</code> — autocomplete</li>
+</ul>
+<hr>
+<h2>3. Directory Structure</h2>
+<pre><code>src/tui/
+├── tui.ts                      # Main TUI setup (entry point)
+├── tui-types.ts               # TypeScript types
+├── tui-launch.ts              # Launch logic
+├── gateway-chat.ts            # Gateway client (WebSocket)
+├── tui-command-handlers.ts    # Slash command handlers
+├── tui-event-handlers.ts      # Keyboard/mouse event handling
+├── tui-overlays.ts            # Modal overlays
+├── tui-local-shell.ts         # Local shell execution
+├── components/
+│   ├── chat-log.ts            # Chat log rendering
+│   ├── markdown-message.ts    # Markdown rendering
+│   └── custom-editor.ts       # Custom input editor
+└── theme/
+    └── theme.ts               # Terminal ANSI colors
+</code></pre>
+<hr>
+<h2>4. Main Entry</h2>
+<p><strong>File:</strong> <code>src/tui/tui.ts:1</code></p>
+<pre><code class="language-typescript">import { CombinedAutocompleteProvider, Container, Key, Loader, ProcessTerminal, Text, TUI } from &quot;@mariozechner/pi-tui&quot;
+
+export async function runTui(opts: TuiOptions) {
+  const terminal = new ProcessTerminal()
+  const container = new Container()
+  const tui = new TUI(terminal, container)
+
+  // Set up session key resolution
+  // Set up initial agent resolution
+  // Set up gateway connection
+  // Start rendering loop
+}
+</code></pre>
+<hr>
+<h2>5. Gateway Connection (TUI)</h2>
+<h3>5.1 TUI Gateway Client</h3>
+<p><strong>File:</strong> <code>src/tui/gateway-chat.ts</code></p>
+<p>Similar to <code>ui/src/ui/gateway.ts</code> (GatewayBrowserClient) but adapted for TUI:</p>
+<pre><code class="language-typescript">export class TuiGatewayClient {
+  constructor(opts: { url: string; auth: TuiAuth })
+  async connect(): Promise&lt;void&gt;
+  async request&lt;T&gt;(method: string, params?: unknown): Promise&lt;T&gt;
+  onEvent(handler: (event: string, payload: unknown) =&gt; void): void
+  disconnect(): void
+}
+</code></pre>
+<h3>5.2 Auth Modes</h3>
+<p>Same as web UI — device identity, gateway token, or password.</p>
+<hr>
+<h2>6. Command Handlers</h2>
+<h3>6.1 Slash Commands</h3>
+<p><strong>File:</strong> <code>src/tui/tui-command-handlers.ts</code></p>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>/new</code></td>
+<td>Start new conversation</td>
+</tr>
+<tr>
+<td><code>/reset</code></td>
+<td>Reset conversation</td>
+</tr>
+<tr>
+<td><code>/model &lt;model&gt;</code></td>
+<td>Switch model</td>
+</tr>
+<tr>
+<td><code>/provider &lt;provider&gt;</code></td>
+<td>Switch provider</td>
+</tr>
+<tr>
+<td><code>/clear</code></td>
+<td>Clear chat log</td>
+</tr>
+<tr>
+<td><code>/exit</code></td>
+<td>Exit TUI</td>
+</tr>
+<tr>
+<td><code>/help</code></td>
+<td>Show help</td>
+</tr>
+</tbody></table>
+<h3>6.2 Command Parser</h3>
+<pre><code class="language-typescript">function parseCommand(input: string): { cmd: string; args: string[] } {
+  const parts = input.trim().split(/\s+/)
+  return { cmd: parts[0], args: parts.slice(1) }
+}
+</code></pre>
+<hr>
+<h2>7. Event Handlers</h2>
+<h3>7.1 Keyboard Events</h3>
+<p><strong>File:</strong> <code>src/tui/tui-event-handlers.ts</code></p>
+<pre><code class="language-typescript">interface TuiKeyEvent {
+  key: Key          // Which key was pressed
+  ctrl: boolean     // Ctrl modifier
+  shift: boolean    // Shift modifier
+  alt: boolean      // Alt modifier
+}
+
+function handleKeyEvent(event: TuiKeyEvent): Action {
+  switch (event.key) {
+    case Key.Enter: return submitMessage()
+    case Key.Escape: return closeOverlay()
+    case Key.CtrlC: return interruptAgent()
+    case Key.Up: return navigateHistory(-1)
+    case Key.Down: return navigateHistory(+1)
+    // ...
+  }
+}
+</code></pre>
+<h3>7.2 Mouse Events</h3>
+<p>Mouse click/drag support for terminal emulators that support mouse reporting.</p>
+<hr>
+<h2>8. Chat Log Rendering</h2>
+<h3>8.1 Chat Log Component</h3>
+<p><strong>File:</strong> <code>src/tui/components/chat-log.ts</code></p>
+<p>Renders the conversation history in the terminal:</p>
+<pre><code class="language-typescript">export class ChatLog extends Container {
+  constructor(messages: ChatMessage[])
+  appendMessage(message: ChatMessage)
+  clear()
+}
+</code></pre>
+<h3>8.2 Markdown Rendering</h3>
+<p><strong>File:</strong> <code>src/tui/components/markdown-message.ts</code></p>
+<p>Renders markdown to ANSI-formatted text:</p>
+<pre><code class="language-typescript">export function renderMarkdownToAnsi(md: string): Text[] {
+  // Parse markdown
+  // Convert to ANSI escape codes for colors/bold/etc.
+  // Return array of Text nodes
+}
+</code></pre>
+<p>Supports: bold, italic, code blocks, links, lists.</p>
+<hr>
+<h2>9. Custom Editor</h2>
+<h3>9.1 Multi-line Input</h3>
+<p><strong>File:</strong> <code>src/tui/components/custom-editor.ts</code></p>
+<p>A terminal input editor that supports:</p>
+<ul>
+<li>Multi-line input (Enter for newline, Ctrl+Enter to send)</li>
+<li>History navigation (Up/Down arrows)</li>
+<li>Auto-complete (Tab)</li>
+<li>Emacs-style key bindings (Ctrl+A, Ctrl+E, etc.)</li>
+</ul>
+<hr>
+<h2>10. Overlays</h2>
+<h3>10.1 Modal Overlays</h3>
+<p><strong>File:</strong> <code>src/tui/tui-overlays.ts</code></p>
+<p>Overlays rendered on top of the main TUI:</p>
+<ul>
+<li>Confirmation dialogs</li>
+<li>Model/provider selection</li>
+<li>Settings panels</li>
+<li>Command palette</li>
+</ul>
+<hr>
+<h2>11. Theme</h2>
+<h3>11.1 ANSI Color Theme</h3>
+<p><strong>File:</strong> <code>src/tui/theme/theme.ts</code></p>
+<pre><code class="language-typescript">export const THEME = {
+  // User message (right-aligned, blue)
+  userMessage: { fg: &quot;blue&quot;, bold: true },
+  // Agent message (left-aligned, white)
+  agentMessage: { fg: &quot;white&quot; },
+  // System message (centered, yellow)
+  systemMessage: { fg: &quot;yellow&quot;, italic: true },
+  // Error (red)
+  error: { fg: &quot;red&quot;, bold: true },
+  // Metadata (dim gray)
+  metadata: { fg: &quot;gray&quot; },
+  // ...
+}
+</code></pre>
+<hr>
+<h2>12. CLI Entry</h2>
+<p><strong>File:</strong> <code>src/cli/tui-cli.ts</code></p>
+<pre><code class="language-typescript">export async function runTuiCli(opts: TuiCliOptions) {
+  // Parse CLI args
+  // Set up terminal
+  // Launch TUI
+}
+</code></pre>
+<p>Called via: <code>openclaw tui</code></p>
+<hr>
+<h2>13. Key Files</h2>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Lines</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>src/tui/tui.ts</code></td>
+<td>~200</td>
+<td>Main TUI setup</td>
+</tr>
+<tr>
+<td><code>src/tui/gateway-chat.ts</code></td>
+<td>~300</td>
+<td>Gateway client for TUI</td>
+</tr>
+<tr>
+<td><code>src/tui/tui-command-handlers.ts</code></td>
+<td>~200</td>
+<td>Slash command handlers</td>
+</tr>
+<tr>
+<td><code>src/tui/tui-event-handlers.ts</code></td>
+<td>~150</td>
+<td>Keyboard/mouse handling</td>
+</tr>
+<tr>
+<td><code>src/tui/tui-overlays.ts</code></td>
+<td>~100</td>
+<td>Modal overlays</td>
+</tr>
+<tr>
+<td><code>src/tui/components/chat-log.ts</code></td>
+<td>~150</td>
+<td>Chat log rendering</td>
+</tr>
+<tr>
+<td><code>src/tui/components/markdown-message.ts</code></td>
+<td>~100</td>
+<td>Markdown to ANSI</td>
+</tr>
+<tr>
+<td><code>src/tui/components/custom-editor.ts</code></td>
+<td>~100</td>
+<td>Input editor</td>
+</tr>
+<tr>
+<td><code>src/tui/theme/theme.ts</code></td>
+<td>~100</td>
+<td>ANSI color theme</td>
+</tr>
+<tr>
+<td><code>src/cli/tui-cli.ts</code></td>
+<td>~50</td>
+<td>CLI entry</td>
+</tr>
+</tbody></table>
+
+  </main>
+</body>
+</html>

@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>vendor skills python</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      line-height: 1.6;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px;
+      color: #333;
+    }
+    .sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 250px;
+      height: 100vh;
+      background: #f8f9fa;
+      border-right: 1px solid #ddd;
+      padding: 20px;
+      overflow-y: auto;
+    }
+    .sidebar h3 { margin-top: 0; color: #4f46e5; }
+    .sidebar ul { list-style: none; padding: 0; }
+    .sidebar li { margin: 8px 0; }
+    .sidebar a { color: #333; text-decoration: none; font-size: 14px; }
+    .sidebar a:hover { color: #4f46e5; }
+    .content { margin-left: 270px; padding: 20px; }
+    pre { background: #1f2937; color: #e5e7eb; padding: 15px; border-radius: 8px; overflow-x: auto; }
+    code { background: #e5e7eb; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+    pre code { background: transparent; color: inherit; }
+    blockquote { border-left: 4px solid #4f46e5; background: #f9fafb; padding: 10px 20px; margin: 1em 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+    th { background: #f3f4f6; }
+    h1, h2, h3 { color: #1f2937; }
+    .home-link { font-size: 24px; font-weight: bold; color: #4f46e5; text-decoration: none; }
+    a { color: #4f46e5; }
+    @media (max-width: 768px) {
+      .sidebar { position: static; width: 100%; height: auto; border-right: none; border-bottom: 1px solid #ddd; }
+      .content { margin-left: 0; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="sidebar">
+    <h3><a href="/" class="home-link">OpenClaw</a></h3>
+    <ul>
+  <li><a href="/01-overview">01 - overview</a></li>
+  <li><a href="/02-plugin-system">02 - plugin system</a></li>
+  <li><a href="/03-channel-system">03 - channel system</a></li>
+  <li><a href="/04-provider-system">04 - provider system</a></li>
+  <li><a href="/05-gateway-protocol">05 - gateway protocol</a></li>
+  <li><a href="/06-agent-system">06 - agent system</a></li>
+  <li><a href="/07-acp">07 - acp</a></li>
+  <li><a href="/08-config-system">08 - config system</a></li>
+  <li><a href="/09-memory-system">09 - memory system</a></li>
+  <li><a href="/10-ui-frontend">10 - ui frontend</a></li>
+  <li><a href="/11-tui">11 - tui</a></li>
+  <li><a href="/12-mobile-apps">12 - mobile apps</a></li>
+  <li><a href="/13-bundled-plugins">13 - bundled plugins</a></li>
+  <li><a href="/14-packages">14 - packages</a></li>
+  <li><a href="/15-cli-daemon">15 - cli daemon</a></li>
+  <li><a href="/16-testing">16 - testing</a></li>
+  <li><a href="/17-acp-deep-dive">17 - acp deep dive</a></li>
+  <li><a href="/18-infra-hooks-tasks">18 - infra hooks tasks</a></li>
+  <li><a href="/19-vendor-skills-python">19 - vendor skills python</a></li>
+  <li><a href="/20-plugin-loader-deep-dive">20 - plugin loader deep dive</a></li>
+  <li><a href="/21-channel-deep-dive">21 - channel deep dive</a></li>
+  <li><a href="/22-embedded-runner-deep-dive">22 - embedded runner deep dive</a></li>
+  <li><a href="/23-gateway-server-methods">23 - gateway server methods</a></li>
+  <li><a href="/24-telegram-extension">24 - telegram extension</a></li>
+    </ul>
+  </nav>
+  <main class="content">
+    <h1>Vendor Code, Python Skills &amp; Special Systems</h1>
+<blockquote>
+<p><em>Part of the OpenClaw Architecture Analysis — see <a href="./01-overview.md">01-overview.md</a></em></p>
+</blockquote>
+<hr>
+<h2>1. Vendor: Google A2UI (<code>vendor/a2ui/</code>)</h2>
+<h3>1.1 What is A2UI?</h3>
+<p><strong>A2UI</strong> = Agent-to-User Interface — Google&#39;s <strong>open-source</strong> (Apache 2.0) protocol for agents to generate <strong>rich declarative UIs</strong> via a JSON specification.</p>
+<ul>
+<li>Spec versions: <strong>v0.8</strong> and <strong>v0.9</strong></li>
+<li>OpenClaw vendors the <strong>Lit web components renderer</strong> and <strong>Angular renderer</strong></li>
+<li>Flutter renderer is in a separate repo (<code>github.com/flutter/genui</code>)</li>
+</ul>
+<h3>1.2 Why Vendored?</h3>
+<p>OpenClaw uses A2UI for the <strong>canvas/control UI rendering system</strong> in <code>src/canvas-host/a2ui/</code>. Vendoring avoids npm dependency issues and allows modifications.</p>
+<h3>1.3 Structure</h3>
+<pre><code>vendor/a2ui/
+├── renderers/
+│   ├── lit/               # Lit web components renderer (v0.8)
+│   └── angular/           # Angular renderer
+├── specification/
+│   ├── 0.8/json/         # JSON Schema for v0.8
+│   └── 0.9/json/         # JSON Schema for v0.9
+├── .gemini/              # Gemini agent guide for the A2UI repo
+└── .github/workflows/    # CI from upstream
+</code></pre>
+<h3>1.4 No Modifications</h3>
+<p>The vendored A2UI code is <strong>unchanged from upstream</strong>. OpenClaw references it directly.</p>
+<hr>
+<h2>2. Python Skills (<code>skills/</code>)</h2>
+<h3>2.1 Overview</h3>
+<p>OpenClaw includes <strong>Python-based skill packages</strong> for various agent capabilities. These are separate from the TypeScript core and are linted/tested via ruff + pytest.</p>
+<h3>2.2 Python Tooling</h3>
+<pre><code class="language-toml"># pyproject.toml
+[tool.ruff]
+target-version = &quot;py310&quot;
+line-length = 100
+[tool.ruff.lint]
+select = [&quot;E9&quot;, &quot;F63&quot;, &quot;F7&quot;, &quot;F82&quot;, &quot;I&quot;]
+[tool.pytest.ini_options]
+testpaths = [&quot;skills&quot;]
+python_files = [&quot;test_*.py&quot;]
+</code></pre>
+<h3>2.3 Skill Categories</h3>
+<table>
+<thead>
+<tr>
+<th>Category</th>
+<th>Skills</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Productivity</td>
+<td>1password, apple-notes, bear-notes, himalaya (email), notion, obsidian, things-mac</td>
+</tr>
+<tr>
+<td>Communication</td>
+<td>discord, slack, imessage, bluebubbles</td>
+</tr>
+<tr>
+<td>Media</td>
+<td>camsnap, gifgrep, video-frames, songsee, spotify-player</td>
+</tr>
+<tr>
+<td>Dev</td>
+<td>coding-agent, github, gh-issues, node-connect, tmux</td>
+</tr>
+<tr>
+<td>AI</td>
+<td>gemini, model-usage</td>
+</tr>
+<tr>
+<td>IoT</td>
+<td>openhue, sonoscli, gog</td>
+</tr>
+<tr>
+<td>Utilities</td>
+<td>blogwatcher, healthcheck, ordercli, sag, sherpa-onnx-tts, summarize, weather, xurl, canvas</td>
+</tr>
+</tbody></table>
+<h3>2.4 Each Skill Contains</h3>
+<ul>
+<li><code>SKILL.md</code> — Skill definition and usage</li>
+<li>Supporting Python scripts</li>
+<li>Tests: <code>test_*.py</code> via pytest</li>
+</ul>
+<h3>2.5 Skill Execution</h3>
+<p>Skills are executed via the Python interpreter as tools by the agent. The ruff linter catches issues; pytest runs the tests.</p>
+<hr>
+<h2>3. Patches (<code>patches/</code>)</h2>
+<h3>3.1 Single Patch File</h3>
+<p><code>patches/@whiskeysockets__baileys@7.0.0-rc.9.patch</code></p>
+<p>This patches the WhatsApp library (used by the <code>whatsapp</code> extension).</p>
+<h3>3.2 Changes</h3>
+<p><strong>1. File Write Race Condition Fix:</strong></p>
+<pre><code class="language-javascript">// Before: finish promises created AFTER write streams ended
+// After: finish promises created BEFORE calling end()
+</code></pre>
+<p>Prevents <code>ENOENT</code> when readers open a file before the OS finishes writing.</p>
+<p><strong>2. Dispatcher Type Guard for fetch:</strong></p>
+<pre><code class="language-javascript">// Only passes dispatcher option when fetchAgent implements dispatch
+if (fetchAgent.dispatch) {
+  fetch({ ..., dispatcher: fetchAgent })
+}
+</code></pre>
+<p>Fixes undici compatibility when Baileys passes a generic agent.</p>
+<hr>
+<h2>4. WhatsApp Extension (Baileys)</h2>
+<p>The <code>extensions/whatsapp/</code> uses <code>@whiskeysockets/baileys</code> library with this patch applied via <code>pnpm.patchedDependencies</code>.</p>
+<hr>
+<h2>5. Vendor Summary</h2>
+<table>
+<thead>
+<tr>
+<th>Vendor</th>
+<th>Version</th>
+<th>Purpose</th>
+<th>Modification</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>a2ui/renderers/lit/</code></td>
+<td>v0.8</td>
+<td>Canvas UI rendering</td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>a2ui/renderers/angular/</code></td>
+<td>v0.8</td>
+<td>Canvas UI rendering</td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>a2ui/specification/0.8/json/</code></td>
+<td>v0.8</td>
+<td>JSON Schema</td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>a2ui/specification/0.9/json/</code></td>
+<td>v0.9</td>
+<td>JSON Schema</td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>baileys</code> (via patch)</td>
+<td>7.0.0-rc.9</td>
+<td>WhatsApp protocol</td>
+<td>Race condition + undici fix</td>
+</tr>
+</tbody></table>
+
+  </main>
+</body>
+</html>

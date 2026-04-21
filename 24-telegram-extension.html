@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>telegram extension</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      line-height: 1.6;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px;
+      color: #333;
+    }
+    .sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 250px;
+      height: 100vh;
+      background: #f8f9fa;
+      border-right: 1px solid #ddd;
+      padding: 20px;
+      overflow-y: auto;
+    }
+    .sidebar h3 { margin-top: 0; color: #4f46e5; }
+    .sidebar ul { list-style: none; padding: 0; }
+    .sidebar li { margin: 8px 0; }
+    .sidebar a { color: #333; text-decoration: none; font-size: 14px; }
+    .sidebar a:hover { color: #4f46e5; }
+    .content { margin-left: 270px; padding: 20px; }
+    pre { background: #1f2937; color: #e5e7eb; padding: 15px; border-radius: 8px; overflow-x: auto; }
+    code { background: #e5e7eb; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+    pre code { background: transparent; color: inherit; }
+    blockquote { border-left: 4px solid #4f46e5; background: #f9fafb; padding: 10px 20px; margin: 1em 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+    th { background: #f3f4f6; }
+    h1, h2, h3 { color: #1f2937; }
+    .home-link { font-size: 24px; font-weight: bold; color: #4f46e5; text-decoration: none; }
+    a { color: #4f46e5; }
+    @media (max-width: 768px) {
+      .sidebar { position: static; width: 100%; height: auto; border-right: none; border-bottom: 1px solid #ddd; }
+      .content { margin-left: 0; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="sidebar">
+    <h3><a href="/" class="home-link">OpenClaw</a></h3>
+    <ul>
+  <li><a href="/01-overview">01 - overview</a></li>
+  <li><a href="/02-plugin-system">02 - plugin system</a></li>
+  <li><a href="/03-channel-system">03 - channel system</a></li>
+  <li><a href="/04-provider-system">04 - provider system</a></li>
+  <li><a href="/05-gateway-protocol">05 - gateway protocol</a></li>
+  <li><a href="/06-agent-system">06 - agent system</a></li>
+  <li><a href="/07-acp">07 - acp</a></li>
+  <li><a href="/08-config-system">08 - config system</a></li>
+  <li><a href="/09-memory-system">09 - memory system</a></li>
+  <li><a href="/10-ui-frontend">10 - ui frontend</a></li>
+  <li><a href="/11-tui">11 - tui</a></li>
+  <li><a href="/12-mobile-apps">12 - mobile apps</a></li>
+  <li><a href="/13-bundled-plugins">13 - bundled plugins</a></li>
+  <li><a href="/14-packages">14 - packages</a></li>
+  <li><a href="/15-cli-daemon">15 - cli daemon</a></li>
+  <li><a href="/16-testing">16 - testing</a></li>
+  <li><a href="/17-acp-deep-dive">17 - acp deep dive</a></li>
+  <li><a href="/18-infra-hooks-tasks">18 - infra hooks tasks</a></li>
+  <li><a href="/19-vendor-skills-python">19 - vendor skills python</a></li>
+  <li><a href="/20-plugin-loader-deep-dive">20 - plugin loader deep dive</a></li>
+  <li><a href="/21-channel-deep-dive">21 - channel deep dive</a></li>
+  <li><a href="/22-embedded-runner-deep-dive">22 - embedded runner deep dive</a></li>
+  <li><a href="/23-gateway-server-methods">23 - gateway server methods</a></li>
+  <li><a href="/24-telegram-extension">24 - telegram extension</a></li>
+    </ul>
+  </nav>
+  <main class="content">
+    <h1>Telegram Extension Deep-Dive</h1>
+<blockquote>
+<p><em>Part of the OpenClaw Architecture Analysis — see <a href="./01-overview.md">01-overview.md</a></em></p>
+</blockquote>
+<hr>
+<h2>1. Entry Point &amp; Plugin Structure</h2>
+<h3>Plugin Registration (<code>extensions/telegram/index.ts</code>)</h3>
+<p>The Telegram extension uses the OpenClaw plugin SDK&#39;s <code>defineBundledChannelEntry</code> to register itself:</p>
+<pre><code class="language-typescript">export default defineBundledChannelEntry({
+  id: &quot;telegram&quot;,
+  name: &quot;Telegram&quot;,
+  description: &quot;Telegram channel plugin&quot;,
+  importMetaUrl: import.meta.url,
+  plugin: {
+    specifier: &quot;./channel-plugin-api.js&quot;,
+    exportName: &quot;telegramPlugin&quot;,
+  },
+  secrets: {
+    specifier: &quot;./secret-contract-api.js&quot;,
+    exportName: &quot;channelSecrets&quot;,
+  },
+  runtime: {
+    specifier: &quot;./runtime-api.js&quot;,
+    exportName: &quot;setTelegramRuntime&quot;,
+  },
+  accountInspect: {
+    specifier: &quot;./account-inspect-api.js&quot;,
+    exportName: &quot;inspectTelegramReadOnlyAccount&quot;,
+  },
+});
+</code></pre>
+<p><strong>Key registration points:</strong></p>
+<ul>
+<li><strong><code>plugin</code></strong>: Exports <code>telegramPlugin</code> from <code>channel-plugin-api.ts</code> — the main plugin instance</li>
+<li><strong><code>secrets</code></strong>: Exports <code>channelSecrets</code> for bot token management</li>
+<li><strong><code>runtime</code></strong>: Exports <code>setTelegramRuntime</code> for runtime store access</li>
+<li><strong><code>accountInspect</code></strong>: Exports account inspection functionality</li>
+</ul>
+<h3>Manifest (<code>openclaw.plugin.json</code>)</h3>
+<pre><code class="language-json">{
+  &quot;id&quot;: &quot;telegram&quot;,
+  &quot;channels&quot;: [&quot;telegram&quot;],
+  &quot;channelEnvVars&quot;: {
+    &quot;telegram&quot;: [&quot;TELEGRAM_BOT_TOKEN&quot;]
+  },
+  &quot;configSchema&quot;: {
+    &quot;type&quot;: &quot;object&quot;,
+    &quot;additionalProperties&quot;: false,
+    &quot;properties&quot;: {}
+  }
+}
+</code></pre>
+<p>The manifest declares:</p>
+<ul>
+<li>Channel ID: <code>telegram</code></li>
+<li>Supported channels array (for multi-bot setups)</li>
+<li>Environment variable: <code>TELEGRAM_BOT_TOKEN</code></li>
+<li>Empty config schema (schema validation delegated to plugin code)</li>
+</ul>
+<h3>Main Plugin Export (<code>channel-plugin-api.ts</code>)</h3>
+<pre><code class="language-typescript">export { telegramPlugin } from &quot;./src/channel.js&quot;;
+export { telegramSetupPlugin } from &quot;./src/channel.setup.js&quot;;
+</code></pre>
+<p>The plugin uses <code>createChatChannelPlugin</code> from the plugin SDK — a comprehensive adapter that wires together:</p>
+<ul>
+<li>Messaging (normalizeTarget, resolveInboundConversation, resolveOutboundSessionRoute)</li>
+<li>Bindings (configured bindings, thread bindings, conversation bindings)</li>
+<li>Security (DM policy, group allowlist)</li>
+<li>Lifecycle (account start/stop, legacy migrations)</li>
+<li>Status/Audit (probe, group membership audit)</li>
+<li>Gateway (startAccount, logoutAccount)</li>
+<li>Threading (top-level reply-to mode)</li>
+<li>Outbound (base adapter, attached results)</li>
+</ul>
+<hr>
+<h2>2. grammY Integration</h2>
+<h3>Polling vs Webhook Modes</h3>
+<p>The Telegram plugin supports both polling and webhook modes, selected at account start time based on configuration:</p>
+<p><strong>Polling</strong> (<code>monitor-polling.runtime.ts</code> / <code>polling-session.ts</code>):</p>
+<ul>
+<li>Uses grammY&#39;s <code>run()</code> runner with <code>TelegramPollingSession</code> class</li>
+<li>Custom <code>allowed_updates</code> filter to minimize unnecessary API calls</li>
+<li>Persistent <code>update_id</code> offset tracking via <code>update-offset-store.ts</code></li>
+<li>Stall detection (120s default) with automatic restart</li>
+<li>IPv4/IPv6 transport fallback support</li>
+<li>Exponential backoff retry (initial 2s, max 30s, 1.8x factor, 0.25 jitter)</li>
+</ul>
+<p><strong>Webhook</strong> (<code>webhook.ts</code>):</p>
+<ul>
+<li>Uses grammY&#39;s <code>webhookCallback()</code> with HMAC secret validation</li>
+<li>Internal HTTP server (default <code>127.0.0.1:8787</code>)</li>
+<li>Per-source rate limiting before secret validation</li>
+<li>Client IP resolution via X-Forwarded-For with trusted proxy support</li>
+<li>Health endpoint at <code>/healthz</code></li>
+</ul>
+<h3>Bot Token Management (<code>token.ts</code>)</h3>
+<p>Token resolution follows a priority cascade:</p>
+<ol>
+<li>Per-account <code>tokenFile</code> (secret file path)</li>
+<li>Per-account <code>botToken</code> (direct config value)</li>
+<li>Channel-level <code>tokenFile</code></li>
+<li>Channel-level <code>botToken</code></li>
+<li>Environment variable <code>TELEGRAM_BOT_TOKEN</code></li>
+<li>Result: <code>{ token: &quot;&quot;, source: &quot;none&quot; }</code></li>
+</ol>
+<p>Multi-account behavior:</p>
+<ul>
+<li>With explicit <code>accounts</code> section: unknown account IDs refuse channel-level fallback</li>
+<li>Without <code>accounts</code> section (single-bot): allow channel-level fallback</li>
+</ul>
+<h3>Update Handling</h3>
+<p><strong>Supported update types</strong> (via <code>allowed-updates.ts</code>):</p>
+<ul>
+<li><code>message</code>, <code>edited_message</code>, <code>channel_post</code>, <code>edited_channel_post</code></li>
+<li><code>callback_query</code>, <code>message_reaction</code>, <code>message_reaction_count</code></li>
+<li><code>inline_query</code> (not currently used but available)</li>
+</ul>
+<p><strong>Update type routing</strong> in <code>bot-handlers.runtime.ts</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Handler</th>
+<th>grammY Event</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>bot.on(&quot;message&quot;)</code></td>
+<td><code>message</code></td>
+<td>Primary inbound messages</td>
+</tr>
+<tr>
+<td><code>bot.on(&quot;channel_post&quot;)</code></td>
+<td><code>channel_post</code></td>
+<td>Bot-to-bot channel comms</td>
+</tr>
+<tr>
+<td><code>bot.on(&quot;callback_query&quot;)</code></td>
+<td><code>callback_query</code></td>
+<td>Inline button interactions</td>
+</tr>
+<tr>
+<td><code>bot.on(&quot;message_reaction&quot;)</code></td>
+<td><code>message_reaction</code></td>
+<td>Emoji reaction events</td>
+</tr>
+<tr>
+<td><code>bot.on(&quot;message:migrate_to_chat_id&quot;)</code></td>
+<td><code>migrate_to_chat_id</code></td>
+<td>Group migration handling</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>3. Message Processing Pipeline</h2>
+<h3>Stage 1: Inbound Debouncing (<code>registerTelegramHandlers</code>)</h3>
+<p><strong>Text Fragment Coalescing</strong> (lines 938-997):</p>
+<ul>
+<li>Buffers near-limit messages (~4096 char Telegram limit)</li>
+<li>Groups consecutive messages within 1 message ID gap and 1.5s time window</li>
+<li>Maximum 12 parts / 50,000 total chars before forcing flush</li>
+<li>Debounce key: <code>text:${chatId}:${threadId}:${senderId}</code> with &quot;default&quot; or &quot;forward&quot; lane</li>
+</ul>
+<p><strong>Media Group Coalescing</strong> (lines 1000-1032):</p>
+<ul>
+<li>500ms timeout after last message before processing</li>
+<li>Sorts messages by <code>message_id</code></li>
+<li>Uses first message with caption/text as primary entry</li>
+<li>Recovers from partial fetch failures gracefully</li>
+</ul>
+<p><strong>Forward Burst Debouncing</strong>:</p>
+<ul>
+<li>Forwarded messages use 80ms debounce window (vs default debounceMs)</li>
+<li>Allows media+text in forwarded bursts to coalesce</li>
+</ul>
+<h3>Stage 2: Message Context Building (<code>buildTelegramMessageContext</code>)</h3>
+<p>Returns a <code>TelegramMessageContext</code> containing:</p>
+<pre><code class="language-typescript">export type TelegramMessageContext = {
+  ctxPayload: TelegramMessageContextPayload;
+  primaryCtx: BuildTelegramMessageContextParams[&quot;primaryCtx&quot;];
+  msg: Message;
+  chatId: number;
+  isGroup: boolean;
+  groupConfig?: TelegramGroupConfig;
+  topicConfig?: TelegramTopicConfig;
+  resolvedThreadId?: number;
+  threadSpec: TelegramThreadSpec;
+  replyThreadId?: number;
+  isForum: boolean;
+  historyKey?: string;
+  historyLimit: number;
+  groupHistories: Map&lt;string, HistoryEntry[]&gt;;
+  route: ResolvedAgentRoute;
+  skillFilter: string[] | undefined;
+  sendTyping: () =&gt; Promise&lt;void&gt;;
+  sendRecordVoice: () =&gt; Promise&lt;void&gt;;
+  ackReactionPromise: Promise&lt;boolean&gt; | null;
+  reactionApi: TelegramReactionApi | null;
+  removeAckAfterReply: boolean;
+  statusReactionController: TelegramStatusReactionController | null;
+  accountId: string;
+};
+</code></pre>
+<p><strong>Key build steps</strong>:</p>
+<ol>
+<li><strong>Forum Detection</strong>: Queries <code>getChat</code> API if <code>is_forum</code> not cached</li>
+<li><strong>Thread Spec Resolution</strong>: Determines DM vs forum topic scope</li>
+<li><strong>Access Control</strong>: Evaluates <code>groupConfig</code>, <code>topicConfig</code>, <code>allowFrom</code> overrides</li>
+<li><strong>Route Resolution</strong>: Uses <code>resolveTelegramConversationRoute()</code> to determine agent/session</li>
+<li><strong>Session Key</strong>: Handles per-DM-topic isolation with thread suffix</li>
+<li><strong>Body Resolution</strong>: Calls <code>resolveTelegramInboundBody()</code> for text normalization</li>
+<li><strong>Status Reactions</strong>: Optional ACK reaction via <code>setMessageReaction</code> API</li>
+</ol>
+<h3>Stage 3: Body Normalization (<code>bot-message-context.body.ts</code>)</h3>
+<p>The <code>resolveTelegramInboundBody()</code> function:</p>
+<ol>
+<li><strong>Sticker Vision</strong>: Checks cache for sticker description; runs vision model if needed</li>
+<li><strong>Audio Transcription</strong>: Preflight transcription for voice messages (if no text and mention required)</li>
+<li><strong>Location Extraction</strong>: Converts location data to text format</li>
+<li><strong>Text Expansion</strong>: Expands <code>text_link</code> entities into inline text</li>
+<li><strong>Mention Detection</strong>: Evaluates explicit @mention and implicit reply-to-bot scenarios</li>
+<li><strong>Command Authorization</strong>: Uses <code>resolveControlCommandGate()</code> for native command access control</li>
+<li><strong>Group Policy Enforcement</strong>: Blocks messages when <code>requireMention=true</code> and no valid mention, unless <code>ingest=true</code> (fires internal hook for async processing)</li>
+</ol>
+<p><strong>Return shape</strong>:</p>
+<pre><code class="language-typescript">type TelegramInboundBodyResult = {
+  bodyText: string;
+  rawBody: string;
+  historyKey?: string;
+  commandAuthorized: boolean;
+  effectiveWasMentioned: boolean;
+  canDetectMention: boolean;
+  shouldBypassMention: boolean;
+  stickerCacheHit: boolean;
+  locationData?: NormalizedLocation;
+};
+</code></pre>
+<h3>Stage 4: Context Payload Building (<code>bot-message-context.session.ts</code>)</h3>
+<p>The <code>buildTelegramInboundContextPayload()</code> function builds the final <code>ctxPayload</code> for the agent:</p>
+<ol>
+<li><strong>Envelope Formatting</strong>: Uses <code>formatInboundEnvelope()</code> for structured message encoding</li>
+<li><strong>Reply/Forward Context</strong>: Extracts and includes quoted replies and forwarded origins</li>
+<li><strong>Group History</strong>: Prepends recent message context (configurable limit)</li>
+<li><strong>Session Recording</strong>: Updates session store with <code>recordInboundSession()</code></li>
+<li><strong>Last Route Persistence</strong>: Updates routing metadata for quick reconnections</li>
+<li><strong>DM Topic Pinning</strong>: Resolves <code>pinnedMainDmOwnerFromAllowlist</code> for DM topic sessions</li>
+</ol>
+<h3>Stage 5: Dispatch to Agent (<code>bot-message-dispatch.ts</code>)</h3>
+<p>The <code>dispatchTelegramMessage()</code> function orchestrates the response flow:</p>
+<p><strong>Abort Fence System</strong>:</p>
+<pre><code class="language-typescript">// Prevents older replies from racing newer ones in the same session
+const telegramAbortFenceByKey = new Map&lt;string, TelegramAbortFenceState&gt;();
+// Key: SessionKey or telegram:${chatId}:${threadScope}:${threadId}
+// Generation increments on supersede (abort command)
+// Blocks active dispatches until generation changes
+</code></pre>
+<p><strong>Streaming Lane Architecture</strong>:</p>
+<ul>
+<li><code>answer</code> lane: Primary response text with <code>sendMessage</code> / <code>editMessageText</code></li>
+<li><code>reasoning</code> lane: Separate reasoning stream (when <code>reasoningLevel: &quot;stream&quot;</code>)</li>
+<li>Drafts use <code>createTelegramDraftStream()</code> with throttling (default 1s)</li>
+</ul>
+<p><strong>Reasoning Split</strong> (<code>reasoning-lane-coordinator.ts</code>):</p>
+<pre><code class="language-typescript">splitTelegramReasoningText(text)
+// Extracts &lt;think&gt;... tags outside code regions
+// Formats reasoning: &quot;Reasoning:\n&lt;reasoning&gt;&quot;
+// Answer: remaining text after stripping tags
+</code></pre>
+<p><strong>Delivery State Tracking</strong> (<code>lane-delivery-state.ts</code>):</p>
+<ul>
+<li>Tracks <code>delivered</code>, <code>skippedNonSilent</code>, <code>failedNonSilent</code> counts</li>
+<li>Provides <code>snapshot()</code> for final delivery summary</li>
+</ul>
+<hr>
+<h2>4. Telegram-Specific Features</h2>
+<h3>Streaming Response Handling (<code>draft-stream.ts</code>)</h3>
+<p><strong><code>createTelegramDraftStream()</code></strong> creates a streaming preview that:</p>
+<ol>
+<li><strong>Throttles Updates</strong>: Minimum 250ms between sends (configurable)</li>
+<li><strong>Respects Telegram Limits</strong>: 4096 char max per message</li>
+<li><strong>Uses sendMessageDraft When Available</strong>: Telegram&#39;s native draft API (avoids edit conflicts)</li>
+<li><strong>Falls Back to sendMessage/editMessageText</strong>: For older clients or draft-unsupported chats</li>
+</ol>
+<p><strong>Transport Selection</strong>:</p>
+<pre><code class="language-typescript">const prefersDraftTransport = params.thread?.scope === &quot;dm&quot;; // DM uses draft by default
+// Falls back to &quot;message&quot; transport (edit-based) for groups
+</code></pre>
+<p><strong>Generation System</strong>:</p>
+<ul>
+<li><code>forceNewMessage()</code> increments generation to abandon old preview</li>
+<li>Superseded previews tracked via <code>onSupersededPreview</code> callback</li>
+<li>Cleanup deletes superseded previews after final delivery</li>
+</ul>
+<p><strong>Materialization</strong>: Converts draft to permanent message on final delivery</p>
+<h3>Inline Keyboard Handling</h3>
+<p><strong>Callback Data Types</strong> (<code>interactive-dispatch.ts</code>):</p>
+<ul>
+<li><code>Exec Approval</code>: <code>approve:${id}:accept|reject</code></li>
+<li><code>Plugin Binding</code>: <code>plugin-binding:${approvalId}:accept|reject</code></li>
+<li><code>Commands Pagination</code>: <code>commands_page_${page}:${agentId}</code></li>
+<li><code>Model Selection</code>: <code>mdl_prov|mdl_list_${provider}_${page}|mdl_sel_${provider}_${model}|mdl_back</code></li>
+<li><code>Native Commands</code>: Encoded via <code>parseTelegramNativeCommandCallbackData</code></li>
+</ul>
+<p><strong>Button Builder</strong> (<code>inline-keyboard.ts</code>):</p>
+<pre><code class="language-typescript">buildInlineKeyboard(buttons)
+// Maps to Telegram&#39;s inline_keyboard format
+// Supports style hints (danger/success/primary) via data-* prefix
+</code></pre>
+<h3>Media Handling</h3>
+<p><strong>Resolution</strong> (<code>bot/delivery.resolve-media.ts</code>):</p>
+<ul>
+<li>Fetches file via <code>getFile</code> API</li>
+<li>Caches to local temp storage</li>
+<li>Extracts metadata (dimensions, duration, MIME type)</li>
+<li>Handles sticker metadata extraction</li>
+</ul>
+<p><strong>Send Logic</strong> (<code>send.ts</code>):</p>
+<ul>
+<li><strong>Images</strong>: Validates dimensions (&lt; 10,000px sum, &lt; 20:1 aspect ratio), sends as photo or document</li>
+<li><strong>Video</strong>: Supports video note (square, looped) via <code>asVideoNote</code> option</li>
+<li><strong>Audio</strong>: Supports voice note via <code>asVoice</code> option</li>
+<li><strong>Animation</strong>: GIF sent as animation</li>
+<li><strong>Document</strong>: Everything else, with <code>forceDocument</code> option</li>
+</ul>
+<p><strong>Caption Splitting</strong> (<code>caption.ts</code>):</p>
+<ul>
+<li>Telegram caption limit ~1024 chars</li>
+<li>Splits into caption + follow-up text for longer content</li>
+</ul>
+<h3>Group Chat Handling</h3>
+<p><strong>Access Evaluation</strong> (<code>group-access.ts</code>):</p>
+<pre><code class="language-typescript">evaluateTelegramGroupBaseAccess()
+// Checks: group enabled, topic enabled, allowFrom override authorization
+// Returns: { allowed: true } | { allowed: false, reason: &quot;group-disabled&quot;|&quot;topic-disabled&quot;|&quot;group-override-unauthorized&quot; }
+
+evaluateTelegramGroupPolicyAccess()
+// Checks: chat-level allowlist, sender authorization
+// Policy modes: &quot;open&quot;, &quot;disabled&quot;, &quot;allowlist&quot;
+</code></pre>
+<p><strong>Group Migration</strong> (<code>migrate_to_chat_id</code> handler):</p>
+<ul>
+<li>Detects group ID change</li>
+<li>Migrates configuration from old to new chat ID</li>
+<li>Updates config file persist</li>
+</ul>
+<h3>Forum Topics (<code>bot/helpers.ts</code>)</h3>
+<p><strong>Thread Spec</strong>:</p>
+<pre><code class="language-typescript">resolveTelegramThreadSpec({ isGroup, isForum, messageThreadId })
+// Returns: { id?: number, scope: &quot;dm&quot; | &quot;forum&quot; | &quot;none&quot; }
+// General forum topic (id=1) must NOT be sent with message_thread_id
+</code></pre>
+<p><strong>Topic Naming</strong> (<code>auto-topic-label.ts</code>):</p>
+<ul>
+<li>On first turn in DM topic, generates label from user message</li>
+<li>Uses LLM with configured prompt</li>
+<li>Renames topic via <code>editForumTopic</code></li>
+</ul>
+<h3>Reaction Notifications</h3>
+<p><strong>Modes</strong> (<code>cfg.messages?.reactionNotifications</code>):</p>
+<ul>
+<li><code>&quot;own&quot;</code>: Only react to messages sent by bot (default)</li>
+<li><code>&quot;off&quot;</code>: Ignore all reactions</li>
+</ul>
+<p><strong>Event Processing</strong>:</p>
+<ul>
+<li>Filters bot-authored reactions</li>
+<li>Enqueues system events for added reactions</li>
+<li>Uses <code>setMessageReaction</code> API (Telegram v6.4+)</li>
+</ul>
+<h3>Status Reactions (Lifecycle Indicators)</h3>
+<p><strong>Controller</strong> (<code>TelegramStatusReactionController</code>):</p>
+<pre><code class="language-typescript">setQueued()      // Replace ACK emoji with queued indicator
+setThinking()    // Show &quot;typing&quot; indicator
+setTool(name)    // Show tool execution indicator
+setCompacting()  // Show compaction indicator
+setError()       // Show error indicator
+setDone()        // Restore to final state
+restoreInitial() // Remove reaction
+cancelPending() // Cancel pending transition
+</code></pre>
+<p><strong>Configuration</strong> (<code>cfg.messages?.statusReactions</code>):</p>
+<ul>
+<li><code>enabled</code>: boolean</li>
+<li><code>emojis</code>: override emoji set</li>
+<li><code>timing</code>: hold durations (queuedHoldMs, doneHoldMs, errorHoldMs)</li>
+</ul>
+<hr>
+<h2>5. Deduplication &amp; Idempotency</h2>
+<h3>Update ID Tracking (<code>update-offset-runtime-api.ts</code>)</h3>
+<p><strong>Persistent Offset Store</strong> (<code>update-offset-store.ts</code>):</p>
+<ul>
+<li>Stores last confirmed <code>update_id</code> per account</li>
+<li>JSON file storage at plugin-controlled path</li>
+<li>Normalization: rejects unsafe integers (&lt; 0, non-finite)</li>
+<li>Confirm-on-startup: Fetches one update at <code>lastUpdateId + 1</code> to confirm validity</li>
+</ul>
+<p><strong>Recovery Flow</strong>:</p>
+<ol>
+<li>Read persisted offset on startup</li>
+<li>If invalid (null/non-integer), start fresh (no offset confirmation)</li>
+<li>If valid, call <code>getUpdates(offset: lastUpdateId + 1, limit: 1, timeout: 0)</code> to verify</li>
+<li>Non-fatal failure: proceed with local tracking only</li>
+</ol>
+<h3>Message Deduplication (<code>bot-updates.ts</code>)</h3>
+<p><strong>Dedupe Cache</strong> (<code>createTelegramUpdateDedupe()</code>):</p>
+<ul>
+<li>TTL: 5 minutes</li>
+<li>Max entries: 2000</li>
+<li>Key: <code>update:${updateId}</code> or <code>callback:${callbackId}</code> or <code>message:${chatId}:${messageId}</code></li>
+</ul>
+<p><strong>Synthetic ID for Unidentified Updates</strong>:</p>
+<ul>
+<li>Messages without <code>update_id</code>: composite key from <code>chatId:messageId</code></li>
+<li>Ensures media groups don&#39;t produce duplicate processing</li>
+</ul>
+<h3>Media Group Handling</h3>
+<p><strong>Buffer</strong> (<code>mediaGroupBuffer</code> Map):</p>
+<ul>
+<li>Keyed by <code>media_group_id</code></li>
+<li>Timer: 500ms flush timeout</li>
+<li>Sort by <code>message_id</code> before processing</li>
+<li>Recoverable errors (network) skip individual photos</li>
+</ul>
+<h3>Text Fragment Handling</h3>
+<p><strong>Buffer</strong> (<code>textFragmentBuffer</code> Map):</p>
+<ul>
+<li>Key: <code>text:${chatId}:${threadId}:${senderId}</code></li>
+<li>Conditions for append: message ID gap ≤ 1, time gap ≤ 1.5s</li>
+<li>Limits: 12 parts max, 50,000 chars max</li>
+<li>Exceeded: flush existing, start new buffer</li>
+</ul>
+<hr>
+<h2>6. Outbound Message Flow</h2>
+<h3>Entry Points</h3>
+<p><strong><code>sendMessageTelegram(to, text, opts)</code></strong> — Primary send function</p>
+<p><strong><code>deliverReplies()</code></strong> — Multi-payload delivery via <code>bot-message-dispatch.ts</code></p>
+<h3>Core Send Pipeline (<code>send.ts</code>)</h3>
+<ol>
+<li><p><strong>Target Resolution</strong>:</p>
+<ul>
+<li>Numeric chat ID: use directly</li>
+<li>Username: lookup via <code>getChat</code> API, persist resolution</li>
+</ul>
+</li>
+<li><p><strong>HTML Rendering</strong> (<code>format.ts</code>):</p>
+<ul>
+<li>Markdown/HTML → Telegram HTML via <code>renderTelegramHtmlText()</code></li>
+<li>Code blocks, tables (configurable mode), links</li>
+</ul>
+</li>
+<li><p><strong>Chunking</strong>:</p>
+<ul>
+<li>Split at 4000 char boundaries</li>
+<li>Preserve entity integrity where possible</li>
+<li>Fall back to plain text if HTML parsing fails</li>
+</ul>
+</li>
+<li><p><strong>Thread Parameters</strong> (<code>buildTelegramThreadReplyParams</code>):</p>
+<ul>
+<li><code>message_thread_id</code>: for forum topics and DM topics</li>
+<li>General topic (id=1): strip thread_id (Telegram rejects it)</li>
+<li><code>reply_to_message_id</code>: for reply threading</li>
+<li><code>reply_parameters</code>: for quote (with text)</li>
+</ul>
+</li>
+<li><p><strong>Transport Fallback</strong>:</p>
+<ul>
+<li>Thread-not-found: retry without <code>message_thread_id</code></li>
+<li>Chat-not-found: enriched error with resolution hints</li>
+</ul>
+</li>
+<li><p><strong>Error Handling</strong>:</p>
+<ul>
+<li>Rate limit: retry with exponential backoff</li>
+<li>Server error (5xx): retry safe</li>
+<li>Network error: retry safe</li>
+<li>&quot;Bot not member&quot;: fail fast with helpful message</li>
+<li>&quot;Chat not found&quot;: fail fast with migration hints</li>
+</ul>
+</li>
+</ol>
+<h3>Reply Threading</h3>
+<p><strong>Top-Level Reply Mode</strong> (<code>threading.topLevelReplyToMode: &quot;telegram&quot;</code>):</p>
+<ul>
+<li>Uses Telegram&#39;s native <code>reply_to_message_id</code></li>
+<li>Quote support with <code>reply_parameters</code></li>
+</ul>
+<p><strong>Per-Message Threading</strong>:</p>
+<ul>
+<li>Forum topics: <code>message_thread_id</code> parameter</li>
+<li>DM topics: <code>message_thread_id</code> parameter</li>
+</ul>
+<h3>Reply Suppression</h3>
+<p><strong><code>targetsMatchForReplySuppression</code></strong>:</p>
+<ul>
+<li>Same chat ID (case-insensitive)</li>
+<li>Same thread ID (both null OR both equal)</li>
+<li>Prevents duplicate delivery across binding paths</li>
+</ul>
+<h3>Lane Delivery (<code>lane-delivery-text-deliverer.ts</code>)</h3>
+<p><strong>Preview Lifecycle</strong>:</p>
+<ul>
+<li><code>&quot;transient&quot;</code>: Can be edited/deleted on final delivery</li>
+<li><code>&quot;complete&quot;</code>: Retained permanently</li>
+</ul>
+<p><strong>Archived Previews</strong>:</p>
+<ul>
+<li>Superseded answer previews stored for potential final-edit replacement</li>
+<li>Deleted on cleanup if unconsumed</li>
+</ul>
+<p><strong>Final Delivery Strategy</strong>:</p>
+<ol>
+<li>If archived preview exists: try to edit it (preserves message ID)</li>
+<li>If no archived preview and can edit: edit active stream</li>
+<li>If cannot edit (too long, media, error): send as new message</li>
+<li>Delete transient previews on cleanup</li>
+</ol>
+<hr>
+<h2>7. Configuration &amp; Secrets</h2>
+<h3>Configuration Schema (<code>config-api.ts</code> / <code>config-schema.ts</code>)</h3>
+<p><strong><code>TelegramConfigSchema</code></strong>:</p>
+<pre><code class="language-typescript">type TelegramAccountConfig = {
+  botToken?: SecretRef | string;
+  tokenFile?: string;
+  webhookUrl?: string;
+  webhookSecret?: string;
+  webhookPath?: string;
+  webhookHost?: string;
+  webhookPort?: number;
+  webhookCertPath?: string;
+  proxy?: string;
+  apiRoot?: string;
+  network?: {
+    autoSelectFamily?: boolean;
+    dnsResultOrder?: &quot;ipv4first&quot; | &quot;ipv6first&quot;;
+  };
+  timeoutSeconds?: number;
+  retry?: RetryConfig;
+  dmPolicy?: &quot;open&quot; | &quot;pairing&quot; | &quot;disabled&quot;;
+  allowFrom?: AllowFromConfig;
+  groupPolicy?: &quot;open&quot; | &quot;disabled&quot; | &quot;allowlist&quot;;
+  groupAllowFrom?: AllowFromConfig;
+  groups?: Record&lt;string, TelegramGroupConfig&gt;;
+  reactionNotifications?: &quot;own&quot; | &quot;off&quot;;
+  statusReactions?: {
+    enabled?: boolean;
+    emojis?: Record&lt;string, string&gt;;
+    timing?: StatusReactionTiming;
+  };
+  linkPreview?: boolean;
+  pollingStallThresholdMs?: number;
+  mediaMaxMb?: number;
+  autoTopicLabel?: AutoTopicLabelConfig;
+  // ACP binding-specific
+  bindingMode?: &quot;single&quot; | &quot;multi&quot;;
+  blockStreamingDefault?: &quot;on&quot; | &quot;off&quot;;
+  inlineButtonsScope?: &quot;off&quot; | &quot;dm&quot; | &quot;group&quot; | &quot;allowlist&quot;;
+  // Approval config
+  approvals?: ApprovalConfig;
+};
+</code></pre>
+<h3>Per-Chat Configuration</h3>
+<p><strong>Group Config</strong> (<code>telegramConfigAdapter.formatGroupConfig</code>):</p>
+<pre><code class="language-typescript">type TelegramGroupConfig = {
+  enabled?: boolean;
+  requireMention?: boolean;
+  allowFrom?: AllowFromConfig;
+  dmPolicy?: DmPolicy;
+  groupPolicy?: ChannelGroupPolicy;
+  topics?: Record&lt;string, TelegramTopicConfig&gt;;
+  // ACP binding
+  agentId?: string;
+  requireTopic?: boolean;
+  autoTopicLabel?: AutoTopicLabelConfig;
+  disableAudioPreflight?: boolean;
+  ingest?: boolean;
+};
+</code></pre>
+<p><strong>Topic Config</strong>: Inherits from group with optional overrides</p>
+<h3>Secrets Storage</h3>
+<p><strong><code>channelSecrets</code></strong> (via <code>secret-contract-api.ts</code>):</p>
+<ul>
+<li>Supports <code>SecretRef</code> references (<code>env:NAME</code>, <code>file:PATH</code>)</li>
+<li>Environment variable: <code>TELEGRAM_BOT_TOKEN</code> (via <code>channelEnvVars</code> in manifest)</li>
+<li>Token file: <code>tokenFile</code> path (absolute or relative to config)</li>
+</ul>
+<h3>Webhook Security</h3>
+<p><strong>Secret Validation</strong>:</p>
+<ul>
+<li>HMAC-SHA256 via <code>safeEqualSecret()</code> (timing-safe comparison)</li>
+<li>Header: <code>X-Telegram-Bot-Api-Secret-Token</code></li>
+<li>Rejects immediately before rate limit counting</li>
+</ul>
+<p><strong>Per-Source Rate Limiting</strong>:</p>
+<ul>
+<li>Fixed window: 60s, 30 requests per window per IP</li>
+<li>Applied before secret validation</li>
+</ul>
+<h3>Status/Audit Probes</h3>
+<p><strong><code>probeTelegram()</code></strong> (<code>probe.ts</code>):</p>
+<ul>
+<li>Calls <code>getMe</code>, <code>getWebhookInfo</code></li>
+<li>Returns bot info, join group flags, inline query support</li>
+<li>Used for account status display</li>
+</ul>
+<p><strong><code>auditTelegramGroupMembership()</code></strong> (<code>audit.ts</code>):</p>
+<ul>
+<li>Batch checks group membership via <code>getChatMember</code></li>
+<li>Reports unresolvable groups and wildcard unmentioned groups</li>
+</ul>
+<hr>
+<h2>Architecture Summary</h2>
+<pre><code>┌─────────────────────────────────────────────────────────────────────┐
+│                        grammY Bot Instance                           │
+│  ┌──────────┐  ┌──────────────┐  ┌────────────────┐  ┌───────────┐ │
+│  │ on(msg)  │  │ on(callback)  │  │ on(reaction)   │  │ webhook   │ │
+│  └────┬─────┘  └──────┬───────┘  └───────┬────────┘  └─────┬─────┘ │
+└───────┼───────────────┼─────────────────┼─────────────────┼───────┘
+        │               │                 │                 │
+        ▼               ▼                 ▼                 ▼
+┌───────────────────────────────────────────────────────────────────┐
+│                    bot-handlers.runtime.ts                          │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  registerTelegramHandlers()                                 │   │
+│  │  - inboundDebouncer (text fragments, media groups)          │   │
+│  │  - processInboundMessage()                                  │   │
+│  │  - processMediaGroup()                                       │   │
+│  │  - processCallbackQuery()                                    │   │
+│  │  - processReaction()                                         │   │
+│  └──────────────────────────┬──────────────────────────────────┘   │
+└──────────────────────────────┼──────────────────────────────────────┘
+                               │
+                               ▼
+┌───────────────────────────────────────────────────────────────────┐
+│                 bot-message-context.ts                            │
+│  ┌────────────────────────────────────────────────────────────┐   │
+│  │  buildTelegramMessageContext()                              │   │
+│  │  - Access evaluation (group/topic allowFrom)                │   │
+│  │  - Route resolution (agent, session key)                    │   │
+│  │  - resolveTelegramInboundBody()                            │   │
+│  │  - buildTelegramInboundContextPayload()                    │   │
+│  └──────────────────────────┬─────────────────────────────────┘   │
+└──────────────────────────────┼──────────────────────────────────────┘
+                               │
+                               ▼
+┌───────────────────────────────────────────────────────────────────┐
+│                 bot-message-dispatch.ts                            │
+│  ┌────────────────────────────────────────────────────────────┐   │
+│  │  dispatchTelegramMessage()                                  │   │
+│  │  - Abort fence management                                   │   │
+│  │  - Lane delivery (answer/reasoning)                         │   │
+│  │  - createChannelReplyPipeline()                            │   │
+│  │  - Streaming preview management                            │   │
+│  └──────────────────────────┬─────────────────────────────────┘   │
+└──────────────────────────────┼──────────────────────────────────────┘
+                               │
+                               ▼
+┌───────────────────────────────────────────────────────────────────┐
+│                      Plugin SDK Core                               │
+│  ┌────────────────────────────────────────────────────────────┐   │
+│  │  createChatChannelPlugin()                                  │   │
+│  │  - Messaging bindings                                       │   │
+│  │  - Conversation bindings                                   │   │
+│  │  - Security policies                                        │   │
+│  │  - Threading management                                     │   │
+│  │  - Outbound adapter                                          │   │
+│  └────────────────────────────────────────────────────────────┘   │
+└───────────────────────────────────────────────────────────────────┘
+</code></pre>
+<hr>
+<h2>Key Files Reference</h2>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>index.ts</code></td>
+<td>Plugin entry point registration</td>
+</tr>
+<tr>
+<td><code>channel-plugin-api.ts</code></td>
+<td>Main plugin export</td>
+</tr>
+<tr>
+<td><code>src/channel.ts</code></td>
+<td><code>createChatChannelPlugin()</code> configuration</td>
+</tr>
+<tr>
+<td><code>src/runtime.ts</code></td>
+<td>Runtime store (setTelegramRuntime)</td>
+</tr>
+<tr>
+<td><code>src/monitor.ts</code></td>
+<td>Provider monitor (polling/webhook dispatcher)</td>
+</tr>
+<tr>
+<td><code>src/monitor-polling.runtime.ts</code></td>
+<td><code>TelegramPollingSession</code> class</td>
+</tr>
+<tr>
+<td><code>src/monitor-webhook.runtime.ts</code></td>
+<td>Webhook startup</td>
+</tr>
+<tr>
+<td><code>src/webhook.ts</code></td>
+<td>HTTP server + webhook handling</td>
+</tr>
+<tr>
+<td><code>src/bot-handlers.runtime.ts</code></td>
+<td>grammY event handlers</td>
+</tr>
+<tr>
+<td><code>src/bot-handlers.ts</code></td>
+<td><code>registerTelegramHandlers()</code></td>
+</tr>
+<tr>
+<td><code>src/bot-message-context.ts</code></td>
+<td>Context building</td>
+</tr>
+<tr>
+<td><code>src/bot-message-context.body.ts</code></td>
+<td>Body normalization</td>
+</tr>
+<tr>
+<td><code>src/bot-message-context.session.ts</code></td>
+<td>Session/context payload building</td>
+</tr>
+<tr>
+<td><code>src/bot-message-dispatch.ts</code></td>
+<td>Response dispatch orchestration</td>
+</tr>
+<tr>
+<td><code>src/send.ts</code></td>
+<td>Outbound send functions</td>
+</tr>
+<tr>
+<td><code>src/draft-stream.ts</code></td>
+<td>Streaming preview</td>
+</tr>
+<tr>
+<td><code>src/lane-delivery.ts</code></td>
+<td>Lane delivery abstractions</td>
+</tr>
+<tr>
+<td><code>src/lane-delivery-text-deliverer.ts</code></td>
+<td>Lane delivery implementation</td>
+</tr>
+<tr>
+<td><code>src/reasoning-lane-coordinator.ts</code></td>
+<td>Reasoning/answer splitting</td>
+</tr>
+<tr>
+<td><code>src/conversation-route.ts</code></td>
+<td>Agent/session routing</td>
+</tr>
+<tr>
+<td><code>src/token.ts</code></td>
+<td>Bot token resolution</td>
+</tr>
+<tr>
+<td><code>src/dm-access.ts</code></td>
+<td>DM access control</td>
+</tr>
+<tr>
+<td><code>src/group-access.ts</code></td>
+<td>Group access control</td>
+</tr>
+<tr>
+<td><code>src/bot/helpers.ts</code></td>
+<td>Telegram helpers (thread params, etc.)</td>
+</tr>
+<tr>
+<td><code>src/bot/types.ts</code></td>
+<td>Telegram types</td>
+</tr>
+<tr>
+<td><code>src/update-offset-runtime-api.ts</code></td>
+<td>Offset store exports</td>
+</tr>
+<tr>
+<td><code>src/update-offset-store.ts</code></td>
+<td>Persistent offset storage</td>
+</tr>
+</tbody></table>
+
+  </main>
+</body>
+</html>

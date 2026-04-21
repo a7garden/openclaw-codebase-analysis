@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>gateway server methods</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      line-height: 1.6;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px;
+      color: #333;
+    }
+    .sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 250px;
+      height: 100vh;
+      background: #f8f9fa;
+      border-right: 1px solid #ddd;
+      padding: 20px;
+      overflow-y: auto;
+    }
+    .sidebar h3 { margin-top: 0; color: #4f46e5; }
+    .sidebar ul { list-style: none; padding: 0; }
+    .sidebar li { margin: 8px 0; }
+    .sidebar a { color: #333; text-decoration: none; font-size: 14px; }
+    .sidebar a:hover { color: #4f46e5; }
+    .content { margin-left: 270px; padding: 20px; }
+    pre { background: #1f2937; color: #e5e7eb; padding: 15px; border-radius: 8px; overflow-x: auto; }
+    code { background: #e5e7eb; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+    pre code { background: transparent; color: inherit; }
+    blockquote { border-left: 4px solid #4f46e5; background: #f9fafb; padding: 10px 20px; margin: 1em 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+    th { background: #f3f4f6; }
+    h1, h2, h3 { color: #1f2937; }
+    .home-link { font-size: 24px; font-weight: bold; color: #4f46e5; text-decoration: none; }
+    a { color: #4f46e5; }
+    @media (max-width: 768px) {
+      .sidebar { position: static; width: 100%; height: auto; border-right: none; border-bottom: 1px solid #ddd; }
+      .content { margin-left: 0; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="sidebar">
+    <h3><a href="/" class="home-link">OpenClaw</a></h3>
+    <ul>
+  <li><a href="/01-overview">01 - overview</a></li>
+  <li><a href="/02-plugin-system">02 - plugin system</a></li>
+  <li><a href="/03-channel-system">03 - channel system</a></li>
+  <li><a href="/04-provider-system">04 - provider system</a></li>
+  <li><a href="/05-gateway-protocol">05 - gateway protocol</a></li>
+  <li><a href="/06-agent-system">06 - agent system</a></li>
+  <li><a href="/07-acp">07 - acp</a></li>
+  <li><a href="/08-config-system">08 - config system</a></li>
+  <li><a href="/09-memory-system">09 - memory system</a></li>
+  <li><a href="/10-ui-frontend">10 - ui frontend</a></li>
+  <li><a href="/11-tui">11 - tui</a></li>
+  <li><a href="/12-mobile-apps">12 - mobile apps</a></li>
+  <li><a href="/13-bundled-plugins">13 - bundled plugins</a></li>
+  <li><a href="/14-packages">14 - packages</a></li>
+  <li><a href="/15-cli-daemon">15 - cli daemon</a></li>
+  <li><a href="/16-testing">16 - testing</a></li>
+  <li><a href="/17-acp-deep-dive">17 - acp deep dive</a></li>
+  <li><a href="/18-infra-hooks-tasks">18 - infra hooks tasks</a></li>
+  <li><a href="/19-vendor-skills-python">19 - vendor skills python</a></li>
+  <li><a href="/20-plugin-loader-deep-dive">20 - plugin loader deep dive</a></li>
+  <li><a href="/21-channel-deep-dive">21 - channel deep dive</a></li>
+  <li><a href="/22-embedded-runner-deep-dive">22 - embedded runner deep dive</a></li>
+  <li><a href="/23-gateway-server-methods">23 - gateway server methods</a></li>
+  <li><a href="/24-telegram-extension">24 - telegram extension</a></li>
+    </ul>
+  </nav>
+  <main class="content">
+    <h1>Gateway Server Methods — Deep Dive</h1>
+<blockquote>
+<p><strong>Gateway server methods</strong> are the heart of the OpenClaw WebSocket protocol. Every method is a typed handler registered in <code>src/gateway/server-methods/</code> that receives a <code>GatewayRequestHandlerOptions</code> containing <code>req</code>, <code>params</code>, <code>client</code>, <code>respond</code>, and <code>context</code>. Handlers respond via <code>respond(ok, payload, error, meta)</code>.</p>
+</blockquote>
+<h2>Protocol Layer</h2>
+<p>All handlers live under <code>src/gateway/server-methods/</code> and export a <code>GatewayRequestHandlers</code> object (a <code>Record&lt;string, GatewayRequestHandler&gt;</code>). The <code>GatewayRequestHandler</code> type is:</p>
+<pre><code class="language-typescript">type GatewayRequestHandler = (opts: GatewayRequestHandlerOptions) =&gt; Promise&lt;void&gt; | void;
+
+type GatewayRequestHandlerOptions = {
+  req: RequestFrame;
+  params: Record&lt;string, unknown&gt;;
+  client: GatewayClient | null;
+  isWebchatConnect: (params: ConnectParams | null | undefined) =&gt; boolean;
+  respond: RespondFn;  // respond(ok, payload?, error?, meta?)
+  context: GatewayRequestContext;  // 60+ fields: deps, cron, broadcast, nodeRegistry, dedupe maps, etc.
+};
+</code></pre>
+<p>Validation is via AJV schema validators generated from protocol schemas in <code>src/gateway/protocol/index.ts</code>. The shared validation helper is <code>assertValidParams&lt;T&gt;(params, validator)</code> in <code>validation.ts</code>.</p>
+<hr>
+<h2>1. Connection — <code>connect.ts</code>, <code>disconnect.ts</code></h2>
+<h3><code>connect</code> (rejected)</h3>
+<p><strong>File:</strong> <code>connect.ts</code></p>
+<pre><code class="language-typescript">connect: ({ respond }) =&gt; { respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, &quot;connect is only valid as the first request&quot;)); }
+</code></pre>
+<p><code>connect</code> is only valid as the very first WebSocket frame. Any subsequent <code>connect</code> call is rejected with <code>INVALID_REQUEST</code>. The actual connection handshake happens at the transport layer before handlers are invoked.</p>
+<h3><code>disconnect</code> (implicit)</h3>
+<p>There is no explicit <code>disconnect</code> handler. Client disconnection is handled by the WebSocket server runtime. The Gateway tracks connected clients via <code>connId</code>.</p>
+<hr>
+<h2>2. Health &amp; Status — <code>health.ts</code>, <code>logs.ts</code></h2>
+<h3><code>health</code></h3>
+<p><strong>File:</strong> <code>health.ts</code></p>
+<pre><code class="language-typescript">health: ({ context, respond }) =&gt; {
+  const cached = context.getHealthCache();
+  if (cached) { respond(true, cached); return; }
+  context.refreshHealthSnapshot({ probe: true }).then(s =&gt; respond(true, s)).catch(err =&gt; respond(false, undefined, errorShape(...)));
+}
+</code></pre>
+<p>Returns a cached health snapshot if available, otherwise probes all subsystems asynchronously. The cache is populated by <code>refreshHealthSnapshot</code>.</p>
+<h3><code>status</code> (alias of <code>health</code>)</h3>
+<p>Same implementation as <code>health</code> — returns the same cached or freshly-probed health summary.</p>
+<h3><code>logs.tail</code></h3>
+<p><strong>File:</strong> <code>logs.ts</code></p>
+<pre><code class="language-typescript">logs.tail: async ({ params, context, respond }) =&gt; {
+  assertValidParams(params, validateLogsTailParams);
+  const { path: logPath, lines = 100 } = params;
+  // streams last N lines from the log file via execFile(&#39;tail&#39;)
+  respond(true, { lines: [...], nextCursor?: string });
+}
+</code></pre>
+<p>Tails the last <code>N</code> lines from a log file. The <code>path</code> must be under an allowed log directory.</p>
+<hr>
+<h2>3. Sessions — <code>sessions.ts</code></h2>
+<p>Sessions are the core abstraction for ongoing conversations. All session state is stored in JSONL transcript files via <code>SessionManager</code> from <code>@mariozechner/pi-coding-agent</code>.</p>
+<h3><code>sessions.list</code></h3>
+<pre><code class="language-typescript">sessions.list: async ({ params, client, context, respond }) =&gt; {
+  assertValidParams(params, validateSessionsListParams);
+  // Returns all sessions visible to the authenticated client
+  // Filters by agentId, limit, cursor pagination
+  respond(true, { sessions: SessionsPreviewEntry[], nextCursor?: string });
+}
+</code></pre>
+<p>Loads the combined session store, filters by ownership/auth scope, returns paginated preview entries (session key, agentId, lastMessageAt, model, messageCount).</p>
+<h3><code>sessions.get</code></h3>
+<pre><code class="language-typescript">sessions.get: async ({ params, client, context, respond }) =&gt; {
+  // Loads full session entry by sessionKey
+  respond(true, { session: SessionEntry });
+}
+</code></pre>
+<h3><code>sessions.create</code></h3>
+<pre><code class="language-typescript">sessions.create: async ({ params, client, context, respond }) =&gt; {
+  assertValidParams(params, validateSessionsCreateParams);
+  // agentId, model?, title?
+  // Resolves default agent if not specified
+  respond(true, { sessionKey, session: SessionEntry });
+}
+</code></pre>
+<h3><code>sessions.send</code></h3>
+<p>One of the most complex handlers. Sends a user message into a session, triggers the reply pipeline.</p>
+<pre><code class="language-typescript">sessions.send: async ({ params, client, context, respond }) =&gt; {
+  assertValidParams(params, validateSessionsSendParams);
+  // 1. Resolve sessionKey, agentId
+  // 2. Check deleted-agent guard
+  // 3. Dispatch inbound message via dispatchInboundMessage()
+  // 4. Agent run deduplication check
+  // 5. Wait for Pi run completion
+  // 6. Update session store with last message
+  respond(true, { messageId, sentAt });
+}
+</code></pre>
+<p>Key implementation details:</p>
+<ul>
+<li>Uses <code>resolveSendPolicy()</code> to determine delivery (relay vs embedded Pi)</li>
+<li>For embedded Pi runs: calls <code>dispatchInboundMessage()</code> which triggers <code>ReplyDispatcher</code></li>
+<li>For relay: forwards to external relay with delivery guarantees</li>
+<li>Abort controller registered in <code>context.chatAbortControllers</code> for the session+run</li>
+<li>Transcript entries written via <code>SessionManager.appendMessage()</code> — never raw JSONL (critical: <code>parentId</code> chain must be preserved)</li>
+</ul>
+<h3><code>sessions.steer</code></h3>
+<p>Injects a steering directive (system prompt modification, context reset, etc.) into an active or recent session.</p>
+<h3><code>sessions.preview</code></h3>
+<pre><code class="language-typescript">sessions.preview: async ({ params, respond }) =&gt; {
+  assertValidParams(params, validateSessionsPreviewParams);
+  // Returns a lightweight preview: last N messages, message count, title
+  respond(true, { preview: SessionsPreviewEntry });
+}
+</code></pre>
+<h3><code>sessions.resolve</code></h3>
+<p>Maps partial session keys or aliases to full session keys using the session store.</p>
+<h3><code>sessions.subscribe</code> / <code>sessions.unsubscribe</code></h3>
+<pre><code class="language-typescript">sessions.subscribe: ({ params, client, context, respond }) =&gt; {
+  assertValidParams(params, validateSessionsSubscribeParams);
+  context.subscribeSessionEvents(connId);  // connId from client
+  respond(true, { subscribed: true });
+}
+</code></pre>
+<p>Subscribes the WebSocket connection to session lifecycle events (created, deleted, updated) for the given session key.</p>
+<h3><code>sessions.messages.subscribe</code> / <code>sessions.messages.unsubscribe</code></h3>
+<p>Subscribes to transcript message events (new messages appended) for a given session. Uses <code>context.subscribeSessionMessageEvents(connId, sessionKey)</code>.</p>
+<h3><code>sessions.compact</code></h3>
+<p>Triggers session compaction — rewriting the transcript file to remove intermediate messages and keep only the significant entries. Uses <code>compactEmbeddedPiSession()</code>.</p>
+<h3><code>sessions.compaction.list</code></h3>
+<pre><code class="language-typescript">sessions.compaction.list: async ({ params, respond }) =&gt; {
+  assertValidParams(params, validateSessionsCompactionListParams);
+  const checkpoints = listSessionCompactionCheckpoints(sessionKey);
+  respond(true, { checkpoints });
+}
+</code></pre>
+<p>Lists all compaction checkpoints for a session.</p>
+<h3><code>sessions.compaction.get</code></h3>
+<p>Gets a specific checkpoint&#39;s contents.</p>
+<h3><code>sessions.compaction.branch</code></h3>
+<p>Creates a new session branch from a compaction checkpoint.</p>
+<h3><code>sessions.compaction.restore</code></h3>
+<p>Restores session state from a compaction checkpoint.</p>
+<h3><code>sessions.patch</code></h3>
+<p>Patches mutable session fields (title, pinned state, tags) in the session store. Triggers internal hooks (<code>hasInternalHookListeners</code>, <code>triggerInternalHook</code>).</p>
+<h3><code>sessions.reset</code></h3>
+<p>Resets a session to a clean state, preserving the session key but clearing transcript. Uses <code>performGatewaySessionReset()</code>.</p>
+<h3><code>sessions.abort</code></h3>
+<pre><code class="language-typescript">sessions.abort: async ({ params, context, respond }) =&gt; {
+  assertValidParams(params, validateSessionsAbortParams);
+  // Aborts any active Pi run for the session
+  abortEmbeddedPiRun(sessionKey);
+  respond(true, { aborted: true });
+}
+</code></pre>
+<h3><code>sessions.delete</code></h3>
+<p>Marks a session as deleted in the store (soft delete). Cannot be undone.</p>
+<h3><code>sessions.usage</code></h3>
+<p>Retrieves usage statistics for a session (token counts, run counts, cost estimates). Delegates to <code>usage.ts</code> logic.</p>
+<hr>
+<h2>4. Chat — <code>chat.ts</code></h2>
+<p>Chat handles real-time message sending and history for active conversational sessions. Unlike <code>sessions.send</code> (which is a fire-and-forget send), <code>chat</code> operates on already-established sessions with more fine-grained control.</p>
+<h3><code>chat.send</code></h3>
+<p>The primary inbound message handler — the most complex handler in the gateway.</p>
+<pre><code class="language-typescript">chat.send: async ({ params, client, context, respond }) =&gt; {
+  assertValidParams(params, validateChatSendParams);
+  // sessionKey, message (text + attachments), replyConfig?
+  // 1. Load session entry
+  // 2. Check deleted-agent guard
+  // 3. Check chat.abort authorization (client must own the run)
+  // 4. Parse message + attachments via parseMessageWithAttachments()
+  // 5. Resolve send policy (embedded vs relay)
+  // 6. If embedded: dispatchInboundMessage -&gt; ReplyDispatcher -&gt; Pi runner
+  // 7. Register abort controller
+  // 8. Return sent message ID + timestamp
+}
+</code></pre>
+<p>Key implementation details:</p>
+<ul>
+<li><strong>Authorization for abort</strong>: <code>chat.abort</code> only works if the requesting client matches the original sender&#39;s auth context</li>
+<li><strong>Attachment handling</strong>: Images/media are offloaded to storage, references kept in message payload</li>
+<li><strong>Canvas blocks</strong>: If canvas content detected in reply, augmented into the transcript</li>
+<li><strong>Transcript sanitization</strong>: All messages pass through <code>stripEnvelopeFromMessage</code> before storage</li>
+<li><strong>Deduplication</strong>: Uses <code>setGatewayDedupeEntry()</code> to prevent duplicate processing</li>
+</ul>
+<h3><code>chat.history</code></h3>
+<pre><code class="language-typescript">chat.history: async ({ params, client, context, respond }) =&gt; {
+  assertValidParams(params, validateChatHistoryParams);
+  // sessionKey, before?, limit?, after?
+  // Reads transcript file, augments with canvas blocks
+  // Sanitizes messages (strips internal envelope fields)
+  respond(true, { messages: ChatMessage[], hasMore: boolean });
+}
+</code></pre>
+<p>Reads from the Pi transcript file and augments with canvas block data. Messages are sanitized to remove internal fields.</p>
+<h3><code>chat.abort</code></h3>
+<pre><code class="language-typescript">chat.abort: async ({ params, client, context, respond }) =&gt; {
+  assertValidParams(params, validateChatAbortParams);
+  // sessionKey, runId
+  // Checks abort authorization (ownership verification)
+  // Calls abortChatRunById(sessionKey, runId)
+  respond(true, { aborted: true });
+}
+</code></pre>
+<p>Authorization is checked by comparing <code>client.connect.authId</code> vs the stored run&#39;s auth context. Only the original sender or admin can abort.</p>
+<h3><code>chat.inject</code></h3>
+<p>Injects an assistant message directly into the session transcript (bypassing the normal reply pipeline). Used for server-side interventions.</p>
+<hr>
+<h2>5. Agent — <code>agent.ts</code>, <code>agents.ts</code>, <code>agent-job.ts</code></h2>
+<h3><code>agent</code> (primary)</h3>
+<p>The core agent run dispatcher.</p>
+<pre><code class="language-typescript">agent: async ({ params, client, context, respond }) =&gt; {
+  assertValidParams(params, validateAgentParams);
+  // sessionKey, message, replyConfig?, spawnedBy?
+  // 1. Deduplication: check context.dedupe for in-flight run
+  // 2. Resolve delivery plan (embedded Pi, relay, or best-effort)
+  // 3. Resolve ingress workspace override (spawned context)
+  // 4. Handle attachments: normalizeRpcAttachmentsToChatAttachments()
+  // 5. Inject timestamp via injectTimestamp()
+  // 6. Register tool event recipient (for tool use callbacks)
+  // 7. Dispatch to Pi runner or relay
+  // 8. Set deduplication entry with TTL
+  respond(true, { runId, deliveryInfo });
+}
+</code></pre>
+<p>Key details:</p>
+<ul>
+<li><strong>Deduplication</strong>: Uses <code>context.dedupe</code> Map keyed by <code>${sessionKey}:${canonicalMessageHash}</code>. Prevents duplicate runs from concurrent send requests.</li>
+<li><strong>Delivery planning</strong>: <code>resolveAgentDeliveryPlan()</code> decides between embedded Pi, relay, or best-effort based on session type and config</li>
+<li><strong>Spawned runs</strong>: <code>spawnedBy</code> field propagated from parent agent context via <code>resolveIngressWorkspaceOverrideForSpawnedRun()</code></li>
+<li><strong>Attachment normalization</strong>: RPC attachment format converted to chat attachment format</li>
+<li><strong>Timestamp injection</strong>: Ensures server-side timestamp is recorded for the run</li>
+</ul>
+<h3><code>agent.identity.get</code></h3>
+<p>Resolves the assistant identity (name, avatar, model) for the agent in a given session.</p>
+<h3><code>agent.wait</code></h3>
+<pre><code class="language-typescript">agent.wait: async ({ params, client, context, respond }) =&gt; {
+  // sessionKey, runId, timeout?
+  // Uses waitForAgentJob() + deduplication-aware caching
+  // Returns terminal snapshot (last message, run status)
+}
+</code></pre>
+<p>Waits for an agent run to complete. Uses deduplication-aware caching to avoid redundant waits.</p>
+<h3><code>agents.list</code></h3>
+<pre><code class="language-typescript">agents.list: async ({ params, client, context, respond }) =&gt; {
+  assertValidParams(params, validateAgentsListParams);
+  const agentIds = listAgentIds();
+  respond(true, { agents: AgentSummary[] });
+}
+</code></pre>
+<h3><code>agents.create</code></h3>
+<p>Creates a new agent definition (workspace + config). Returns the new agent&#39;s ID and summary.</p>
+<h3><code>agents.update</code></h3>
+<p>Updates mutable agent fields (name, description, instructions, model selection).</p>
+<h3><code>agents.delete</code></h3>
+<p>Soft-deletes an agent. Sessions using the agent are marked as &quot;deleted agent&quot; and cannot receive new messages.</p>
+<h3><code>agents.files.list</code></h3>
+<p>Lists files in an agent&#39;s workspace.</p>
+<h3><code>agents.files.get</code></h3>
+<p>Reads a specific file from an agent&#39;s workspace.</p>
+<h3><code>agents.files.set</code></h3>
+<p>Writes or updates a file in an agent&#39;s workspace.</p>
+<hr>
+<h2>6. Config — <code>config.ts</code></h2>
+<h3><code>config.get</code></h3>
+<pre><code class="language-typescript">config.get: async ({ params, client, context, respond }) =&gt; {
+  assertValidParams(params, validateConfigGetParams);
+  const snapshot = readConfigFileSnapshot();
+  // Returns full config (with sensitive fields redacted via redactConfigObject)
+  respond(true, { config: OpenClawConfig, baseHash: string });
+}
+</code></pre>
+<p>Returns the current config snapshot plus a <code>baseHash</code> for optimistic locking on writes.</p>
+<h3><code>config.set</code></h3>
+<p>Full config replacement with base hash validation. Rejected if base hash mismatch (concurrent modification).</p>
+<pre><code class="language-typescript">config.set: async ({ params, client, context, respond }) =&gt; {
+  assertValidParams(params, validateConfigSetParams);
+  // Requires baseHash match
+  // Validates with plugins via validateConfigObjectWithPlugins()
+  // Writes config file
+  // Broadcasts config changed event
+  respond(true, { config, baseHash });
+}
+</code></pre>
+<h3><code>config.patch</code></h3>
+<p>Partial config update using JSON merge patch (RFC 7396). Only changed fields are written. More efficient than <code>set</code> for small changes.</p>
+<h3><code>config.apply</code></h3>
+<p>Applies a config change with restart coordination via restart sentinels. If restart is required, writes a restart sentinel file and coordinates graceful restart.</p>
+<h3><code>config.schema</code></h3>
+<p>Returns the full runtime config schema (all known config fields, types, defaults, validation rules).</p>
+<h3><code>config.schema.lookup</code></h3>
+<p>Looks up a specific schema node by path (e.g., <code>config.schema.lookup([&quot;auth&quot;, &quot;providers&quot;, 0, &quot;apiKey&quot;])</code>).</p>
+<h3><code>config.openFile</code></h3>
+<p>Opens a config file in the editor configured by the user (<code>$EDITOR</code> or similar).</p>
+<hr>
+<h2>7. Channels — <code>channels.ts</code></h2>
+<h3><code>channels.status</code></h3>
+<pre><code class="language-typescript">channels.status: async ({ params, client, context, respond }) =&gt; {
+  assertValidParams(params, validateChannelsStatusParams);
+  // Probes all configured channels for connection status
+  // Returns per-channel status: connected, disconnected, error, lastErrorAt
+  // For each channel: checks runtime, credential validity, recent errors
+  respond(true, { channels: ChannelStatus[] });
+}
+</code></pre>
+<p>Probes all channel plugins (Slack, Discord, Teams, etc.) to get real-time connection status.</p>
+<h3><code>channels.start</code></h3>
+<p>Starts a specific channel plugin (initialize runtime, connect to provider). Used for on-demand channel activation.</p>
+<h3><code>channels.logout</code></h3>
+<p>Logs out of a channel (clears credentials, marks channel as logged-out in runtime).</p>
+<hr>
+<h2>8. Commands — <code>commands.ts</code></h2>
+<h3><code>commands.list</code></h3>
+<pre><code class="language-typescript">commands.list: async ({ params, respond }) =&gt; {
+  assertValidParams(params, validateCommandsListParams);
+  // Returns available slash commands: name, description, params
+  respond(true, { commands: CommandEntry[] });
+}
+</code></pre>
+<hr>
+<h2>9. Cron — <code>cron.ts</code></h2>
+<p>Cron jobs are scheduled via <code>CronServiceContract</code> in the context. Jobs persist to a store file.</p>
+<h3><code>wake</code></h3>
+<p>Used by the cron scheduler to wake the gateway and dispatch due cron jobs. Called by the background scheduler loop.</p>
+<h3><code>cron.list</code></h3>
+<pre><code class="language-typescript">cron.list: async ({ params, respond }) =&gt; {
+  assertValidParams(params, validateCronListParams);
+  const jobs = cron.list();  // from CronServiceContract
+  respond(true, { jobs: CronJob[] });
+}
+</code></pre>
+<h3><code>cron.status</code></h3>
+<pre><code class="language-typescript">cron.status: async ({ params, respond }) =&gt; {
+  // Returns runtime status of the cron scheduler (enabled, next run, last run, errors)
+  respond(true, { status: CronStatus });
+}
+</code></pre>
+<h3><code>cron.add</code></h3>
+<p>Adds a new cron job. Params: <code>name</code>, <code>pattern</code> (cron expression), <code>action</code>, <code>params</code>, <code>enabled?</code>.</p>
+<h3><code>cron.update</code></h3>
+<p>Updates an existing cron job&#39;s fields.</p>
+<h3><code>cron.remove</code></h3>
+<p>Deletes a cron job by ID.</p>
+<h3><code>cron.run</code></h3>
+<p>Manually triggers a cron job run immediately (bypassing the schedule).</p>
+<h3><code>cron.runs</code></h3>
+<p>Lists recent cron job run history (last N executions with status, duration, output/error).</p>
+<hr>
+<h2>10. Devices — <code>devices.ts</code></h2>
+<p>Device management for mobile app pairing and authentication.</p>
+<h3><code>device.pair.list</code></h3>
+<pre><code class="language-typescript">device.pair.list: async ({ params, respond }) =&gt; {
+  assertValidParams(params, validateDevicePairListParams);
+  const pairings = listDevicePairing();
+  respond(true, { pairings: DevicePairingEntry[] });
+}
+</code></pre>
+<h3><code>device.pair.approve</code></h3>
+<p>Approves a pending device pairing request. After approval, the device can complete the auth flow.</p>
+<h3><code>device.pair.reject</code></h3>
+<p>Rejects a pending device pairing request.</p>
+<h3><code>device.pair.remove</code></h3>
+<p>Removes a paired device (revokes its tokens).</p>
+<h3><code>device.token.rotate</code></h3>
+<p>Rotates a device&#39;s authentication token (used during re-auth flow).</p>
+<h3><code>device.token.revoke</code></h3>
+<p>Revokes a device token entirely (logout from that device).</p>
+<hr>
+<h2>11. Nodes — <code>nodes.ts</code></h2>
+<p>Node pairing and remote invocation for companion apps (iOS, Android, macOS).</p>
+<h3><code>node.pair.request</code></h3>
+<p>Initiates pairing between gateway and a companion node.</p>
+<pre><code class="language-typescript">node.pair.request: async ({ params, client, context, respond }) =&gt; {
+  assertValidParams(params, validateNodePairRequestParams);
+  // Stores pairing request, generates pending token
+  // Notifies operator via broadcast
+  respond(true, { pairingId, expiresAt });
+}
+</code></pre>
+<h3><code>node.pair.list</code></h3>
+<p>Lists all node pairing requests (pending + paired nodes).</p>
+<h3><code>node.pair.approve</code></h3>
+<p>Approves a node pairing request. The node receives an approval notification via push (APNs) and completes the handshake.</p>
+<h3><code>node.pair.reject</code></h3>
+<p>Rejects a node pairing request.</p>
+<h3><code>node.pair.verify</code></h3>
+<p>Verifies the node&#39;s token during pairing handshake.</p>
+<h3><code>node.rename</code></h3>
+<p>Renames a paired node (updates the catalog).</p>
+<h3><code>node.list</code></h3>
+<pre><code class="language-typescript">node.list: async ({ params, client, context, respond }) =&gt; {
+  assertValidParams(params, validateNodeListParams);
+  const nodes = listKnownNodes();
+  respond(true, { nodes: KnownNode[] });
+}
+</code></pre>
+<h3><code>node.describe</code></h3>
+<p>Gets detailed information about a specific node (capabilities, last seen, connection state).</p>
+<h3><code>node.canvas.capability.refresh</code></h3>
+<p>Refreshes the canvas capability token for a node (extends validity, may rotate key).</p>
+<h3><code>node.pending.pull</code></h3>
+<p>Pulls pending actions queued for a node (actions dispatched when node was offline).</p>
+<h3><code>node.pending.ack</code></h3>
+<p>Acknowledges receipt of pending actions. Nodes ack after processing.</p>
+<h3><code>node.invoke</code></h3>
+<p>Invokes a command on a companion node, waking it via APNs push if necessary.</p>
+<pre><code class="language-typescript">node.invoke: async ({ params, client, context, respond }) =&gt; {
+  assertValidParams(params, validateNodeInvokeParams);
+  // nodeId, command, paramsJSON, idempotencyKey
+  // 1. Look up node in nodeRegistry
+  // 2. If offline: send APNs wake (sendApnsBackgroundWake)
+  // 3. Queue action (PendingNodeAction) with TTL
+  // 4. If node reconnects within wait window: action forwarded
+  // 5. Respond with invokeId for later result correlation
+}
+</code></pre>
+<p><strong>Wake flow</strong>: If the node is offline, <code>sendApnsBackgroundWake()</code> is called with a wake payload. The node reconnects, pulls pending actions, and executes. The gateway waits for <code>node.invoke.result</code> within the timeout window.</p>
+<p><strong>Wake throttling</strong>: Nodes are not woken more than once per 15 seconds (<code>NODE_WAKE_THROTTLE_MS</code>). Nudge (non-wake) notifications throttled to once per 10 minutes.</p>
+<h3><code>node.invoke.result</code></h3>
+<p>Receives the result of a node invoke command from the node. The node calls this when it has completed the command.</p>
+<h3><code>node.event</code></h3>
+<p>Allows a node to push an event to the gateway (asynchronous notification from node to gateway).</p>
+<h3><code>node.pending.drain</code> / <code>node.pending.enqueue</code></h3>
+<p>Manually drain or enqueue pending actions for a node (admin/debug operations).</p>
+<hr>
+<h2>12. Talk (TTS) — <code>talk.ts</code></h2>
+<p>Talk controls text-to-speech settings and playback.</p>
+<h3><code>talk.config</code></h3>
+<p>Gets the current TTS configuration (provider, voice, rate, pitch).</p>
+<h3><code>talk.speak</code></h3>
+<p>Triggers TTS playback of a text string on the client device. The text is synthesized via the configured TTS provider and played on the client.</p>
+<h3><code>talk.mode</code></h3>
+<p>Sets or gets the current talk mode (enabled/disabled/automatic).</p>
+<hr>
+<h2>13. Skills — <code>skills.ts</code></h2>
+<h3><code>skills.status</code></h3>
+<p>Gets the current status of all installed skills (enabled/disabled, version, last updated).</p>
+<h3><code>skills.bins</code></h3>
+<p>Lists all skill bins (grouped skill collections).</p>
+<h3><code>skills.search</code></h3>
+<p>Searches available skills (from clawhub or local bins).</p>
+<h3><code>skills.detail</code></h3>
+<p>Gets detailed information about a specific skill.</p>
+<h3><code>skills.install</code></h3>
+<p>Installs a skill from clawhub or a URL.</p>
+<h3><code>skills.update</code></h3>
+<p>Updates an installed skill to a newer version.</p>
+<hr>
+<h2>14. Tools — <code>tools-effective.ts</code>, <code>tools-catalog.ts</code></h2>
+<h3><code>tools.effective</code></h3>
+<pre><code class="language-typescript">tools.effective: async ({ params, client, context, respond }) =&gt; {
+  // sessionKey, agentId?
+  // Returns the effective tool list for the session/agent
+  // Resolves from: agent config + global config + runtime overrides
+  respond(true, { tools: ToolDefinition[] });
+}
+</code></pre>
+<h3><code>tools.catalog</code></h3>
+<p>Returns the full catalog of available tools (all tool plugins registered in the system).</p>
+<hr>
+<h2>15. Models — <code>models.ts</code>, <code>models-auth-status.ts</code></h2>
+<h3><code>models.list</code></h3>
+<pre><code class="language-typescript">models.list: async ({ params, respond }) =&gt; {
+  assertValidParams(params, validateModelsListParams);
+  const catalog = context.loadGatewayModelCatalog();
+  respond(true, { models: ModelCatalogEntry[] });
+}
+</code></pre>
+<h3><code>models.authStatus</code></h3>
+<pre><code class="language-typescript">models.authStatus: async ({ params, client, context, respond }) =&gt; {
+  // Checks OAuth status for all configured model providers
+  // Aggregates multiple provider auth states
+  // Caches results with TTL
+  // Enriches with usage data if available
+  respond(true, { providers: ProviderAuthStatus[], totalUsage?: UsageSummary });
+}
+</code></pre>
+<p>Key details:</p>
+<ul>
+<li>Caches per-provider auth status to avoid repeated OAuth introspection</li>
+<li>Aggregates status across all providers (Anthropic, OpenAI, Google, etc.)</li>
+<li>Enriches with usage/cost data when available</li>
+</ul>
+<hr>
+<h2>16. Usage — <code>usage.ts</code></h2>
+<h3><code>usage.status</code></h3>
+<p>Current overall usage summary (requests, tokens, cost across all models).</p>
+<h3><code>usage.cost</code></h3>
+<p>Cost breakdown by model and time period.</p>
+<h3><code>sessions.usage</code></h3>
+<p>Token and request usage for a specific session.</p>
+<h3><code>sessions.usage.timeseries</code></h3>
+<p>Time-series usage data (hourly/daily cost and request counts).</p>
+<h3><code>sessions.usage.logs</code></h3>
+<p>Detailed per-request usage logs for a session.</p>
+<hr>
+<h2>17. Exec Approvals — <code>exec-approvals.ts</code>, <code>exec-approval.ts</code></h2>
+<h3><code>exec.approvals.get</code></h3>
+<p>Gets the current exec approval settings (approval required, approved commands, etc.).</p>
+<h3><code>exec.approvals.set</code></h3>
+<p>Updates exec approval settings.</p>
+<h3><code>exec.approvals.node.get/set</code></h3>
+<p>Per-node exec approval overrides.</p>
+<h3><code>exec.approval.get</code></h3>
+<p>Gets the status of a specific pending exec approval request.</p>
+<h3><code>exec.approval.list</code></h3>
+<p>Lists all pending exec approval requests.</p>
+<h3><code>exec.approval.request</code></h3>
+<pre><code class="language-typescript">exec.approval.request: async ({ params, client, context, respond }) =&gt; {
+  assertValidParams(params, validateExecApprovalRequestParams);
+  // command, args, sessionKey, origin
+  // Creates approval request, assigns requestId
+  // Notifies approval clients via broadcast
+  // Returns requestId for polling
+  respond(true, { requestId, expiresAt });
+}
+</code></pre>
+<h3><code>exec.approval.waitDecision</code></h3>
+<p>Blocks until a decision is reached (approved/denied/timeout). Used by operators waiting for approval.</p>
+<h3><code>exec.approval.resolve</code></h3>
+<p>Resolves a pending approval request (approve or deny). When approved, the command is executed.</p>
+<p>Key implementation details:</p>
+<ul>
+<li>Two-phase approval: request is created, operator polls <code>waitDecision</code>, resolver approves</li>
+<li>iOS push delivery: approval requests can be pushed to mobile devices via APNs</li>
+<li>Forwarder pattern: for commands that need approval, a <code>ExecApprovalForwarder</code> intercepts and holds the command</li>
+</ul>
+<hr>
+<h2>18. Plugin Approvals — <code>plugin-approval.ts</code></h2>
+<h3><code>plugin.approval.list</code></h3>
+<p>Lists pending plugin approval requests.</p>
+<h3><code>plugin.approval.request</code></h3>
+<p>Requests approval to load/use a plugin.</p>
+<h3><code>plugin.approval.waitDecision</code></h3>
+<p>Blocks until plugin approval is granted or denied.</p>
+<h3><code>plugin.approval.resolve</code></h3>
+<p>Resolves a pending plugin approval request.</p>
+<hr>
+<h2>19. Cron Approvals — (handled in <code>cron.ts</code>)</h2>
+<p>Cron jobs that involve exec approval flow through the same approval manager.</p>
+<hr>
+<h2>20. System — <code>system.ts</code></h2>
+<h3><code>gateway.identity.get</code></h3>
+<pre><code class="language-typescript">gateway.identity.get: ({ client, respond }) =&gt; {
+  // Returns the gateway&#39;s identity: nodeId, gatewayVersion, protocol version
+  respond(true, { nodeId, version, protocolVersion });
+}
+</code></pre>
+<h3><code>last-heartbeat</code></h3>
+<p>Returns the last heartbeat timestamp received from this client.</p>
+<h3><code>set-heartbeats</code></h3>
+<p>Enables or disables heartbeat monitoring for this connection.</p>
+<h3><code>system-presence</code></h3>
+<p>Sets the operator&#39;s presence status (online/away/busy).</p>
+<h3><code>system-event</code></h3>
+<p>Allows operator to emit a named system event for debugging/tracing purposes.</p>
+<hr>
+<h2>21. Update — <code>update.ts</code></h2>
+<h3><code>update.run</code></h3>
+<p>Triggers a gateway self-update. Downloads and applies updates. Coordinate with restart sentinel system.</p>
+<hr>
+<h2>22. TTS — <code>tts.ts</code></h2>
+<h3><code>tts.status</code></h3>
+<p>Gets current TTS provider status (enabled, configured provider, voice settings).</p>
+<h3><code>tts.enable</code> / <code>tts.disable</code></h3>
+<p>Enables or disables TTS globally.</p>
+<h3><code>tts.convert</code></h3>
+<p>Converts text to speech and returns audio data (or saves to a file for playback).</p>
+<h3><code>tts.setProvider</code></h3>
+<p>Sets the active TTS provider.</p>
+<h3><code>tts.providers</code></h3>
+<p>Lists available TTS providers and their configuration status.</p>
+<hr>
+<h2>23. Doctor (Memory System) — <code>doctor.ts</code></h2>
+<p>Memory system diagnostic and repair tools.</p>
+<h3><code>doctor.memory.status</code></h3>
+<p>Overall health status of the memory system (vector store, memory nodes, embedding status).</p>
+<h3><code>doctor.memory.dreamDiary</code></h3>
+<p>Gets the dream diary entries for memory dreaming.</p>
+<h3><code>doctor.memory.backfillDreamDiary</code></h3>
+<p>Triggers a backfill of dream diary entries from recent memory activity.</p>
+<h3><code>doctor.memory.resetDreamDiary</code></h3>
+<p>Clears the dream diary.</p>
+<h3><code>doctor.memory.resetGroundedShortTerm</code></h3>
+<p>Resets the grounded short-term memory store.</p>
+<h3><code>doctor.memory.repairDreamingArtifacts</code></h3>
+<p>Repairs corrupted or inconsistent dreaming artifacts.</p>
+<h3><code>doctor.memory.dedupeDreamDiary</code></h3>
+<p>Deduplicates dream diary entries.</p>
+<hr>
+<h2>24. Push — <code>push.ts</code></h2>
+<h3><code>push.test</code></h3>
+<p>Sends a test push notification to the operator&#39;s registered devices. Used to verify push configuration.</p>
+<hr>
+<h2>25. Secrets — <code>secrets.ts</code></h2>
+<h3><code>secrets.reload</code></h3>
+<p>Reloads secrets from the secrets store (re-reads from Vault, environment, or secrets file).</p>
+<h3><code>secrets.resolve</code></h3>
+<p>Resolves a secret reference to its current value (for runtime use). Used by the config system to inject secrets into plugin configs.</p>
+<hr>
+<h2>26. Web Login — <code>web.ts</code></h2>
+<h3><code>web.login.start</code></h3>
+<p>Initiates a web-based login flow. Returns an OAuth URL or login page URL for the operator to complete.</p>
+<h3><code>web.login.wait</code></h3>
+<p>Blocks until the web login flow completes (operator completes auth in browser). Returns the authenticated session token.</p>
+<hr>
+<h2>27. Wizard — <code>wizard.ts</code></h2>
+<h3><code>wizard.start</code></h3>
+<p>Starts the onboarding wizard for a new operator.</p>
+<h3><code>wizard.next</code></h3>
+<p>Advances the wizard to the next step. Handles step validation and data collection.</p>
+<h3><code>wizard.cancel</code></h3>
+<p>Cancels the onboarding wizard.</p>
+<h3><code>wizard.status</code></h3>
+<p>Returns the current wizard state (current step, collected data, progress).</p>
+<hr>
+<h2>28. Voice Wake — <code>voicewake.ts</code></h2>
+<h3><code>voicewake.get</code></h3>
+<pre><code class="language-typescript">voicewake.get: async ({ respond }) =&gt; {
+  const cfg = await loadVoiceWakeConfig();
+  respond(true, { triggers: cfg.triggers });
+}
+</code></pre>
+<p>Returns the current voice wake word triggers.</p>
+<h3><code>voicewake.set</code></h3>
+<pre><code class="language-typescript">voicewake.set: async ({ params, context, respond }) =&gt; {
+  if (!Array.isArray(params.triggers)) { respond(false, ...); return; }
+  const triggers = normalizeVoiceWakeTriggers(params.triggers);
+  const cfg = await setVoiceWakeTriggers(triggers);
+  context.broadcastVoiceWakeChanged(cfg.triggers);  // notify all connected clients
+  respond(true, { triggers: cfg.triggers });
+}
+</code></pre>
+<p>Updates voice wake triggers and broadcasts the change to all connected clients.</p>
+<hr>
+<h2>Helper Files</h2>
+<h3><code>agent-job.ts</code></h3>
+<p><code>waitForAgentJob()</code> — Core function for waiting on agent run completion. Uses <code>context.chatAbortControllers</code> and <code>context.dedupe</code> for tracking. Returns when the run reaches a terminal state or times out.</p>
+<h3><code>agent-wait-dedupe.ts</code></h3>
+<p>Deduplication logic for <code>agent.wait</code>. Prevents multiple concurrent waits for the same run from redundant work.</p>
+<h3><code>agent-timestamp.ts</code></h3>
+<p><code>injectTimestamp()</code> and <code>timestampOptsFromConfig()</code> — Injects server-side timestamps into agent runs for latency tracking.</p>
+<h3><code>attachment-normalize.ts</code></h3>
+<p><code>normalizeRpcAttachmentsToChatAttachments()</code> — Converts RPC attachment format (from network protocol) to internal chat attachment format.</p>
+<h3><code>base-hash.ts</code></h3>
+<p><code>resolveBaseHashParam()</code> — Extracts and validates the base hash parameter used for optimistic locking in config writes.</p>
+<h3><code>restart-request.ts</code></h3>
+<p><code>parseRestartRequestParams()</code> — Shared utility for parsing restart request params (used by <code>config.apply</code>).</p>
+<h3><code>nodes.helpers.ts</code></h3>
+<p>Utility functions for node handlers: <code>respondInvalidParams</code>, <code>respondUnavailableOnNodeInvokeError</code>, <code>respondUnavailableOnThrow</code>, <code>safeParseJson</code>.</p>
+<h3><code>nodes.handlers.invoke-result.ts</code></h3>
+<p><code>handleNodeInvokeResult()</code> — Handles the result of a node invoke, correlating it with the pending action and notifying waiters.</p>
+<h3><code>chat-transcript-inject.ts</code></h3>
+<p><code>appendInjectedAssistantMessageToTranscript()</code> — Appends an injected assistant message to the session transcript.</p>
+<h3><code>chat-webchat-media.ts</code></h3>
+<p><code>buildWebchatAudioContentBlocksFromReplyPayloads()</code> — Builds webchat-compatible media blocks from reply payloads (for TTS/audio responses).</p>
+<h3><code>shared-types.ts</code></h3>
+<p>Re-exports from <code>types.ts</code> — provides <code>GatewayRequestHandlers</code> and related types to handler files.</p>
+<h3><code>validation.ts</code></h3>
+<p><code>assertValidParams&lt;T&gt;()</code> — The central AJV validation helper used by all handlers.</p>
+<h3><code>sessions.runtime.ts</code></h3>
+<p>Lazy-loaded module for session runtime operations. Loaded on demand to avoid bundling session runtime in server tests.</p>
+<hr>
+<h2>Summary: Method Count by Category</h2>
+<table>
+<thead>
+<tr>
+<th>Category</th>
+<th>Methods</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Connection</td>
+<td>1 (connect rejected)</td>
+</tr>
+<tr>
+<td>Health/Status</td>
+<td>2 (health, logs.tail)</td>
+</tr>
+<tr>
+<td>Sessions</td>
+<td>~18 (list, get, create, send, steer, preview, resolve, subscribe/unsubscribe, messages.subscribe/unsubscribe, compact, compaction.*, patch, reset, abort, delete, usage)</td>
+</tr>
+<tr>
+<td>Chat</td>
+<td>4 (send, history, abort, inject)</td>
+</tr>
+<tr>
+<td>Agent</td>
+<td>7 (agent, identity.get, wait, agents.list/create/update/delete, agents.files.list/get/set)</td>
+</tr>
+<tr>
+<td>Config</td>
+<td>7 (get, set, patch, apply, schema, schema.lookup, openFile)</td>
+</tr>
+<tr>
+<td>Channels</td>
+<td>3 (status, start, logout)</td>
+</tr>
+<tr>
+<td>Commands</td>
+<td>1 (list)</td>
+</tr>
+<tr>
+<td>Cron</td>
+<td>7 (wake, list, status, add, update, remove, run, runs)</td>
+</tr>
+<tr>
+<td>Devices</td>
+<td>6 (pair.list/approve/reject/remove, token.rotate/revoke)</td>
+</tr>
+<tr>
+<td>Nodes</td>
+<td>~12 (pair.request/list/approve/reject/verify, rename, list, describe, canvas.capability.refresh, pending.pull/ack, invoke, invoke.result, event, pending.drain/enqueue)</td>
+</tr>
+<tr>
+<td>Talk</td>
+<td>3 (config, speak, mode)</td>
+</tr>
+<tr>
+<td>Skills</td>
+<td>6 (status, bins, search, detail, install, update)</td>
+</tr>
+<tr>
+<td>Tools</td>
+<td>2 (effective, catalog)</td>
+</tr>
+<tr>
+<td>Models</td>
+<td>2 (list, authStatus)</td>
+</tr>
+<tr>
+<td>Usage</td>
+<td>4 (status, cost, sessions.usage, sessions.usage.timeseries, sessions.usage.logs)</td>
+</tr>
+<tr>
+<td>Exec Approvals</td>
+<td>7 (approvals.get/set, approvals.node.get/set, approval.get/list/request/waitDecision/resolve)</td>
+</tr>
+<tr>
+<td>Plugin Approvals</td>
+<td>4 (list, request, waitDecision, resolve)</td>
+</tr>
+<tr>
+<td>System</td>
+<td>5 (identity.get, last-heartbeat, set-heartbeats, system-presence, system-event)</td>
+</tr>
+<tr>
+<td>Update</td>
+<td>1 (run)</td>
+</tr>
+<tr>
+<td>TTS</td>
+<td>5 (status, enable, disable, convert, setProvider, providers)</td>
+</tr>
+<tr>
+<td>Doctor</td>
+<td>7 (memory.status, dreamDiary, backfillDreamDiary, resetDreamDiary, resetGroundedShortTerm, repairDreamingArtifacts, dedupeDreamDiary)</td>
+</tr>
+<tr>
+<td>Push</td>
+<td>1 (test)</td>
+</tr>
+<tr>
+<td>Secrets</td>
+<td>2 (reload, resolve)</td>
+</tr>
+<tr>
+<td>Web</td>
+<td>2 (login.start, login.wait)</td>
+</tr>
+<tr>
+<td>Wizard</td>
+<td>4 (start, next, cancel, status)</td>
+</tr>
+<tr>
+<td>Voice Wake</td>
+<td>2 (get, set)</td>
+</tr>
+<tr>
+<td><strong>Total</strong></td>
+<td><strong>~110+</strong></td>
+</tr>
+</tbody></table>
+<hr>
+<h2>Key Architectural Notes</h2>
+<ol>
+<li><p><strong>All handlers are data-first and acyclic</strong>: Protocol exports do not route back through heavier gateway runtime helpers at import time. This keeps the contract surface cheap and order-independent.</p>
+</li>
+<li><p><strong>Session transcripts are parentId chains/DAGs</strong>: Always write via <code>SessionManager.appendMessage()</code> (or <code>appendInjectedAssistantMessageToTranscript</code>). Never append via raw JSONL — missing <code>parentId</code> can sever the leaf path and break compaction/history.</p>
+</li>
+<li><p><strong>Deduplication is first-class</strong>: Agent runs, chat sends, and agent waits all use the <code>context.dedupe</code> map keyed by <code>${sessionKey}:${canonicalHash}</code>. This prevents duplicate work from concurrent requests.</p>
+</li>
+<li><p><strong>Abort is scoped and authorized</strong>: Chat abort checks that the requesting client matches the original sender. Sessions abort checks the abort controller entry.</p>
+</li>
+<li><p><strong>Config writes use optimistic locking</strong>: The <code>baseHash</code> parameter is validated against the current config snapshot hash before any write proceeds. Mismatch → <code>INVALID_REQUEST</code>.</p>
+</li>
+<li><p><strong>Node invoke uses a wake/throttle/queue pattern</strong>: Offline nodes are woken via APNs, actions are queued with TTL and per-node limits, and nodes poll for pending actions on reconnect.</p>
+</li>
+<li><p><strong>Broadcast is first-class</strong>: All state changes (config changed, voice wake triggers changed, session events) are broadcast to all relevant connected clients via <code>context.broadcast</code> and <code>context.broadcastToConnIds</code>.</p>
+</li>
+<li><p><strong>Handler tests should reuse suite-level infrastructure</strong>: Connect/auth handshake should not be restarted per test case. Use <code>context</code> fixtures and explicit state reset.</p>
+</li>
+</ol>
+
+  </main>
+</body>
+</html>

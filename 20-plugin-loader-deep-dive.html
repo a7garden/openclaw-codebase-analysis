@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>plugin loader deep dive</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      line-height: 1.6;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px;
+      color: #333;
+    }
+    .sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 250px;
+      height: 100vh;
+      background: #f8f9fa;
+      border-right: 1px solid #ddd;
+      padding: 20px;
+      overflow-y: auto;
+    }
+    .sidebar h3 { margin-top: 0; color: #4f46e5; }
+    .sidebar ul { list-style: none; padding: 0; }
+    .sidebar li { margin: 8px 0; }
+    .sidebar a { color: #333; text-decoration: none; font-size: 14px; }
+    .sidebar a:hover { color: #4f46e5; }
+    .content { margin-left: 270px; padding: 20px; }
+    pre { background: #1f2937; color: #e5e7eb; padding: 15px; border-radius: 8px; overflow-x: auto; }
+    code { background: #e5e7eb; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+    pre code { background: transparent; color: inherit; }
+    blockquote { border-left: 4px solid #4f46e5; background: #f9fafb; padding: 10px 20px; margin: 1em 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+    th { background: #f3f4f6; }
+    h1, h2, h3 { color: #1f2937; }
+    .home-link { font-size: 24px; font-weight: bold; color: #4f46e5; text-decoration: none; }
+    a { color: #4f46e5; }
+    @media (max-width: 768px) {
+      .sidebar { position: static; width: 100%; height: auto; border-right: none; border-bottom: 1px solid #ddd; }
+      .content { margin-left: 0; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="sidebar">
+    <h3><a href="/" class="home-link">OpenClaw</a></h3>
+    <ul>
+  <li><a href="/01-overview">01 - overview</a></li>
+  <li><a href="/02-plugin-system">02 - plugin system</a></li>
+  <li><a href="/03-channel-system">03 - channel system</a></li>
+  <li><a href="/04-provider-system">04 - provider system</a></li>
+  <li><a href="/05-gateway-protocol">05 - gateway protocol</a></li>
+  <li><a href="/06-agent-system">06 - agent system</a></li>
+  <li><a href="/07-acp">07 - acp</a></li>
+  <li><a href="/08-config-system">08 - config system</a></li>
+  <li><a href="/09-memory-system">09 - memory system</a></li>
+  <li><a href="/10-ui-frontend">10 - ui frontend</a></li>
+  <li><a href="/11-tui">11 - tui</a></li>
+  <li><a href="/12-mobile-apps">12 - mobile apps</a></li>
+  <li><a href="/13-bundled-plugins">13 - bundled plugins</a></li>
+  <li><a href="/14-packages">14 - packages</a></li>
+  <li><a href="/15-cli-daemon">15 - cli daemon</a></li>
+  <li><a href="/16-testing">16 - testing</a></li>
+  <li><a href="/17-acp-deep-dive">17 - acp deep dive</a></li>
+  <li><a href="/18-infra-hooks-tasks">18 - infra hooks tasks</a></li>
+  <li><a href="/19-vendor-skills-python">19 - vendor skills python</a></li>
+  <li><a href="/20-plugin-loader-deep-dive">20 - plugin loader deep dive</a></li>
+  <li><a href="/21-channel-deep-dive">21 - channel deep dive</a></li>
+  <li><a href="/22-embedded-runner-deep-dive">22 - embedded runner deep dive</a></li>
+  <li><a href="/23-gateway-server-methods">23 - gateway server methods</a></li>
+  <li><a href="/24-telegram-extension">24 - telegram extension</a></li>
+    </ul>
+  </nav>
+  <main class="content">
+    <h1>Plugin Loader Deep Dive — Full Loading Sequence</h1>
+<blockquote>
+<p><em>Part of the OpenClaw Architecture Analysis — see <a href="./01-overview.md">01-overview.md</a></em></p>
+</blockquote>
+<hr>
+<h2>1. The Full Loading Sequence</h2>
+<p>From <code>src/plugins/loader.ts</code> (line 1397+):</p>
+<pre><code>loadOpenClawPlugins(options)
+  │
+  ├─ resolvePluginLoadCacheContext()        [normalize config, activation source, scope]
+  ├─ getCachedPluginRegistry()             [check cache for existing registry]
+  ├─ PluginLoadReentryError               [throw if load already in-flight]
+  ├─ Clear prior plugin state             [if activating: agents, commands, handlers]
+  │
+  ├─ createPluginJitiLoader()             [JITI for .ts loading, with caching]
+  │
+  ├─ LAZY PROXY for runtime               [defer runtime property access]
+  │    └─ resolvePluginRuntimeModulePath() [resolve runtime module path]
+  │
+  ├─ createPluginRegistry()               [create empty registry + API builder]
+  │
+  ├─ discoverOpenClawPlugins()             [find all candidates from configured paths]
+  │
+  ├─ loadPluginManifestRegistry()          [parse openclaw.plugin.json for each]
+  │
+  ├─ buildProvenanceIndex()               [path matching for install tracking]
+  │
+  ├─ Sort candidates by precedence:         [config &gt; global &gt; bundled &gt; workspace]
+  │
+  ├─ Per-candidate processing:
+  │    ├─ Validate config schema
+  │    ├─ ensureBundledPluginRuntimeDeps()  [for bundled plugins]
+  │    ├─ Determine registration mode: [full | setup-runtime | setup-only | null]
+  │    ├─ For bundle-format: skip runtime, push capabilities
+  │    ├─ For memory plugins: apply slot decision
+  │    ├─ Load module via JITI
+  │    ├─ For channel plugins with setupSource: handle split
+  │    └─ Call register(api) or activate(api)
+  │
+  ├─ Memory slot validation               [warn if configured slot plugin not found]
+  │
+  ├─ Untracked plugin warning               [loaded but not in allowlist]
+  │
+  ├─ Store cache                           [registry + all plugin state snapshots]
+  │
+  └─ activatePluginRegistry()
+       └─ setActivePluginRegistry()
+       └─ initializeGlobalHookRunner()
+</code></pre>
+<hr>
+<h2>2. Discovery</h2>
+<pre><code class="language-typescript">discoverOpenClawPlugins()
+// → Searches stock/global/workspace roots
+// → Returns PluginCandidate[] with: root, dir, manifestPath, origin
+// Origin types: &quot;bundled&quot; | &quot;global&quot; | &quot;workspace&quot; | &quot;config&quot;
+// Bundled plugins skip ownership checks
+</code></pre>
+<p>Discovery roots resolved via <code>resolvePluginSourceRoots()</code>:</p>
+<ul>
+<li><strong>stock</strong>: built-in bundled plugins</li>
+<li><strong>global</strong>: <code>~/.openclaw/plugins/</code></li>
+<li><strong>workspace</strong>: project-specific plugins</li>
+</ul>
+<hr>
+<h2>3. Manifest Loading</h2>
+<pre><code class="language-typescript">loadPluginManifest(rootDir, rejectHardlinks)
+  → resolvePluginManifestPath()
+  → openBoundaryFileSync()           [hardlink rejection, boundary safety]
+  → JSON5.parse()                    [allows comments/trailing commas]
+  → Validate: id (string), configSchema (object)
+  → Normalize optional fields
+  → Return PluginManifestLoadResult
+</code></pre>
+<p><strong>Manifest normalizations:</strong></p>
+<ul>
+<li><code>kind</code>: string → array of <code>PluginKind</code></li>
+<li><code>channels</code>, <code>providers</code>, <code>cliBackends</code>: normalized lists</li>
+<li><code>activation</code>: parsed into <code>PluginManifestActivation</code></li>
+<li><code>contracts</code>: parsed into <code>PluginManifestContracts</code></li>
+<li><code>channelConfigs</code>: parsed via <code>normalizeChannelConfigs()</code></li>
+</ul>
+<hr>
+<h2>4. Lazy Runtime Proxy</h2>
+<pre><code class="language-typescript">// LAZY_RUNTIME_REFLECTION_KEYS defines which properties are lazy
+const LAZY_RUNTIME_REFLECTION_KEYS = [
+  &quot;subagent&quot;, &quot;channel&quot;, &quot;acp&quot;,
+  &quot;config&quot;, &quot;agent&quot;, &quot;system&quot;,
+  &quot;media&quot;, &quot;tts&quot;, &quot;stt&quot;, &quot;events&quot;,
+  &quot;logging&quot;, &quot;state&quot;, &quot;modelAuth&quot;
+]
+
+// Accessing any lazy key triggers module load
+runtime.subagent.run(...)  // → loads runtime module first
+</code></pre>
+<hr>
+<h2>5. Registration Flow</h2>
+<pre><code class="language-typescript">createPluginRegistry()
+  → Creates empty PluginRegistry
+  → Sets up all registration functions
+  → Returns registry
+
+// Each registration function:
+registerProvider(provider)
+  → validateProvider()
+  → check for duplicates
+  → push to registry.providers[]
+  → push diagnostic on conflict
+
+registerTool(tool)
+  → validateTool()
+  → check for duplicates
+  → push to registry.tools[]
+
+registerChannel(channel)
+  → normalizeRegisteredChannelPlugin()
+  → push to registry.channels[]
+
+registerHook(event, handler)
+  → registerTypedHook(event, handler)
+  → push to registry.typedHooks[]
+</code></pre>
+<hr>
+<h2>6. Activation Planner</h2>
+<pre><code class="language-typescript">resolveManifestActivationPluginIds(params)
+  → For each trigger in params.triggers:
+       kind: &quot;command&quot;  → checks plugin.activation.onCommands + commandAliases
+       kind: &quot;provider&quot; → checks plugin.activation.onProviders + plugin.providers
+       kind: &quot;agentHarness&quot; → checks plugin.activation.onAgentHarnesses
+       kind: &quot;channel&quot;  → checks plugin.activation.onChannels
+       kind: &quot;route&quot;    → checks plugin.activation.onRoutes
+       kind: &quot;capability&quot; → checks plugin.activation.onCapabilities
+  → Returns sorted plugin IDs
+</code></pre>
+<hr>
+<h2>7. Bundle Format Detection</h2>
+<pre><code class="language-typescript">detectBundleManifestFormat(rootDir)
+  → Check .codex-plugin/plugin.json     → &quot;codex&quot;
+  → Check .claude-plugin/plugin.json    → &quot;claude&quot;
+  → Check .cursor-plugin/plugin.json    → &quot;cursor&quot;
+  → Check for manifestless Claude:
+       skills/, commands/, hooks/hooks.json, .mcp.json, .lsp.json
+       → &quot;claude&quot; (manifestless)
+</code></pre>
+<hr>
+<h2>8. Rollback on Error</h2>
+<pre><code class="language-typescript">rollbackPluginGlobalSideEffects(pluginId)
+// Clears:
+// - Plugin commands
+// - Plugin interactive handlers
+// - Context engines for plugin:${pluginId}
+// - Internal hooks (unregisters, restores previous registrations)
+</code></pre>
+<hr>
+<h2>9. Key Plugin Type: PluginRuntime</h2>
+<pre><code class="language-typescript">type PluginRuntime = PluginRuntimeCore &amp; {
+  subagent: {
+    run(params: SubagentRunParams): Promise&lt;SubagentRunResult&gt;
+    waitForRun(params: SubagentWaitParams): Promise&lt;SubagentWaitResult&gt;
+    getSessionMessages(params): Promise&lt;SubagentGetSessionMessagesResult&gt;
+    getSession(params): Promise&lt;SubagentGetSessionResult&gt;
+    deleteSession(params): Promise&lt;void&gt;
+  }
+  channel: PluginRuntimeChannel
+}
+
+type SubagentRunParams = {
+  sessionKey: string
+  message: string
+  provider?: string
+  model?: string
+  extraSystemPrompt?: string
+  lane?: string
+  deliver?: boolean
+  idempotencyKey?: string
+}
+</code></pre>
+
+  </main>
+</body>
+</html>

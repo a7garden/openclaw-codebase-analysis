@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>testing</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      line-height: 1.6;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px;
+      color: #333;
+    }
+    .sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 250px;
+      height: 100vh;
+      background: #f8f9fa;
+      border-right: 1px solid #ddd;
+      padding: 20px;
+      overflow-y: auto;
+    }
+    .sidebar h3 { margin-top: 0; color: #4f46e5; }
+    .sidebar ul { list-style: none; padding: 0; }
+    .sidebar li { margin: 8px 0; }
+    .sidebar a { color: #333; text-decoration: none; font-size: 14px; }
+    .sidebar a:hover { color: #4f46e5; }
+    .content { margin-left: 270px; padding: 20px; }
+    pre { background: #1f2937; color: #e5e7eb; padding: 15px; border-radius: 8px; overflow-x: auto; }
+    code { background: #e5e7eb; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+    pre code { background: transparent; color: inherit; }
+    blockquote { border-left: 4px solid #4f46e5; background: #f9fafb; padding: 10px 20px; margin: 1em 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+    th { background: #f3f4f6; }
+    h1, h2, h3 { color: #1f2937; }
+    .home-link { font-size: 24px; font-weight: bold; color: #4f46e5; text-decoration: none; }
+    a { color: #4f46e5; }
+    @media (max-width: 768px) {
+      .sidebar { position: static; width: 100%; height: auto; border-right: none; border-bottom: 1px solid #ddd; }
+      .content { margin-left: 0; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="sidebar">
+    <h3><a href="/" class="home-link">OpenClaw</a></h3>
+    <ul>
+  <li><a href="/01-overview">01 - overview</a></li>
+  <li><a href="/02-plugin-system">02 - plugin system</a></li>
+  <li><a href="/03-channel-system">03 - channel system</a></li>
+  <li><a href="/04-provider-system">04 - provider system</a></li>
+  <li><a href="/05-gateway-protocol">05 - gateway protocol</a></li>
+  <li><a href="/06-agent-system">06 - agent system</a></li>
+  <li><a href="/07-acp">07 - acp</a></li>
+  <li><a href="/08-config-system">08 - config system</a></li>
+  <li><a href="/09-memory-system">09 - memory system</a></li>
+  <li><a href="/10-ui-frontend">10 - ui frontend</a></li>
+  <li><a href="/11-tui">11 - tui</a></li>
+  <li><a href="/12-mobile-apps">12 - mobile apps</a></li>
+  <li><a href="/13-bundled-plugins">13 - bundled plugins</a></li>
+  <li><a href="/14-packages">14 - packages</a></li>
+  <li><a href="/15-cli-daemon">15 - cli daemon</a></li>
+  <li><a href="/16-testing">16 - testing</a></li>
+  <li><a href="/17-acp-deep-dive">17 - acp deep dive</a></li>
+  <li><a href="/18-infra-hooks-tasks">18 - infra hooks tasks</a></li>
+  <li><a href="/19-vendor-skills-python">19 - vendor skills python</a></li>
+  <li><a href="/20-plugin-loader-deep-dive">20 - plugin loader deep dive</a></li>
+  <li><a href="/21-channel-deep-dive">21 - channel deep dive</a></li>
+  <li><a href="/22-embedded-runner-deep-dive">22 - embedded runner deep dive</a></li>
+  <li><a href="/23-gateway-server-methods">23 - gateway server methods</a></li>
+  <li><a href="/24-telegram-extension">24 - telegram extension</a></li>
+    </ul>
+  </nav>
+  <main class="content">
+    <h1>Testing Strategy</h1>
+<blockquote>
+<p><em>Part of the OpenClaw Architecture Analysis — see <a href="./01-overview.md">01-overview.md</a></em></p>
+</blockquote>
+<hr>
+<h2>1. Overview</h2>
+<p>OpenClaw uses <strong>Vitest</strong> as its test framework. Tests are colocated with source (<code>*.test.ts</code>) and follow specific patterns to avoid common pitfalls with hot tests and module mocking.</p>
+<hr>
+<h2>2. Test Layout</h2>
+<h3>2.1 Test File Placement</h3>
+<pre><code>src/
+├── foo.ts
+└── foo.test.ts          ← Colocated with source
+
+extensions/telegram/
+├── src/
+│   └── channel.ts
+└── src/
+    └── channel.test.ts  ← In src/ subdirectory
+</code></pre>
+<h3>2.2 E2E Tests</h3>
+<pre><code>src/
+└── foo.e2e.test.ts      ← E2E tests with .e2e suffix
+</code></pre>
+<h3>2.3 Test Helpers</h3>
+<pre><code>test/
+├── helpers/
+│   ├── AGENTS.md         ← Test helper rules
+│   ├── channels/
+│   │   └── AGENTS.md    ← Channel test helper rules
+│   ├── mock-plugin.ts    ← Mock plugin builder
+│   ├── mock-runtime.ts   ← Mock runtime
+│   └── ...
+</code></pre>
+<hr>
+<h2>3. Test Commands</h2>
+<h3>3.1 Basic Commands</h3>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>pnpm test</code></td>
+<td>Full test suite</td>
+</tr>
+<tr>
+<td><code>pnpm test:changed</code></td>
+<td>Only tests for changed files</td>
+</tr>
+<tr>
+<td><code>pnpm test:coverage</code></td>
+<td>Coverage report</td>
+</tr>
+<tr>
+<td><code>pnpm test:live</code></td>
+<td>Live testing with <code>OPENCLAW_LIVE_TEST=1</code></td>
+</tr>
+<tr>
+<td><code>pnpm test:live -- --filter=&quot;chat&quot;</code></td>
+<td>Filtered live tests</td>
+</tr>
+</tbody></table>
+<h3>3.2 Extension Tests</h3>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>pnpm test:extensions</code></td>
+<td>All extension shards</td>
+</tr>
+<tr>
+<td><code>pnpm test:extensions/&lt;id&gt;</code></td>
+<td>One extension lane</td>
+</tr>
+</tbody></table>
+<h3>3.3 Performance Profiling</h3>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>pnpm test:perf:imports &lt;file&gt;</code></td>
+<td>Import time profiling</td>
+</tr>
+<tr>
+<td><code>pnpm test:perf:hotspots --limit N</code></td>
+<td>Find slowest test suites</td>
+</tr>
+</tbody></table>
+<h3>3.4 Shard Timing</h3>
+<p>Shard timing artifact: <code>.artifacts/vitest-shard-timings.json</code></p>
+<p>Used automatically for balanced shard ordering. Disable with <code>OPENCLAW_TEST_PROJECTS_TIMINGS=0</code>.</p>
+<hr>
+<h2>4. Hot Test Patterns</h2>
+<h3>4.1 The Problem</h3>
+<p>Per-test <code>vi.resetModules()</code> + fresh heavy imports cause slow tests because:</p>
+<ul>
+<li>Module graph is re-evaluated for each test</li>
+<li>Heavy imports (providers, plugins) are re-parsed and re-executed</li>
+</ul>
+<h3>4.2 Recommended Pattern</h3>
+<pre><code class="language-typescript">// GOOD: Static or beforeAll imports, reset state directly
+import { createAgentRuntime } from &quot;../src/agents/runtime&quot;
+
+let runtime: AgentRuntime
+
+beforeAll(() =&gt; {
+  runtime = createAgentRuntime({ /* config */ })
+})
+
+afterEach(() =&gt; {
+  runtime.resetState()  // Reset without re-importing
+})
+
+test(&quot;agent can send message&quot;, async () =&gt; {
+  const response = await runtime.sendMessage({ text: &quot;hello&quot; })
+  expect(response.text).toBeDefined()
+})
+</code></pre>
+<h3>4.3 Avoid</h3>
+<pre><code class="language-typescript">// BAD: vi.resetModules() + fresh imports per test
+beforeEach(async () =&gt; {
+  vi.resetModules()
+  runtime = await import(&quot;../src/agents/runtime&quot;)
+})
+
+test(&quot;agent can send message&quot;, async () =&gt; {
+  // Slow — re-imports everything each test
+})
+</code></pre>
+<hr>
+<h2>5. Mocking Strategy</h2>
+<h3>5.1 Mock Expensive Runtime Seams</h3>
+<p>Mock at runtime boundaries, not at module level:</p>
+<table>
+<thead>
+<tr>
+<th>Mock</th>
+<th>Use Instead Of</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Mock scanner</td>
+<td>Scanning filesystem</td>
+</tr>
+<tr>
+<td>Mock manifest</td>
+<td>Plugin manifest parsing</td>
+</tr>
+<tr>
+<td>Mock package registry</td>
+<td>Package version lookups</td>
+</tr>
+<tr>
+<td>Mock provider SDK</td>
+<td>Provider API calls</td>
+</tr>
+<tr>
+<td>Mock network</td>
+<td>HTTP/WebSocket calls</td>
+</tr>
+</tbody></table>
+<h3>5.2 Prefer Injected Deps Over Module Mocks</h3>
+<pre><code class="language-typescript">// GOOD: Inject mock at boundary
+function createAgentRuntime(deps: { provider: Provider }) {
+  return new AgentRuntime(deps)
+}
+
+const mockProvider = { runInference: vi.fn() }
+const runtime = createAgentRuntime({ provider: mockProvider })
+</code></pre>
+<h3>5.3 Narrow Local Mocks</h3>
+<p>If mocking modules, mock narrow local <code>*.runtime.ts</code> seams:</p>
+<pre><code class="language-typescript">// GOOD: Mock the local runtime seam
+vi.mock(&quot;../src/agents/anthropic-transport-stream.runtime&quot;, () =&gt; ({
+  createTransport: vi.fn().mockResolvedValue(mockTransport),
+}))
+</code></pre>
+<h3>5.4 Avoid</h3>
+<pre><code class="language-typescript">// BAD: Broad module mocks
+vi.mock(&quot;openclaw/plugin-sdk&quot;, () =&gt; ({ /* ... */ }))
+vi.mock(&quot;../src/channels/plugins/types&quot;, () =&gt; ({ /* ... */ }))
+</code></pre>
+<hr>
+<h2>6. Test Isolation</h2>
+<h3>6.1 Worker Isolation</h3>
+<p>Tests run in Vitest workers. Each worker has its own module cache.</p>
+<pre><code class="language-bash"># Limit workers for memory pressure
+OPENCLAW_VITEST_MAX_WORKERS=1 pnpm test
+</code></pre>
+<h3>6.2 Shared Fixtures</h3>
+<pre><code class="language-typescript">// test/helpers/fixtures/agent-factory.ts
+export function createTestAgent(config?: Partial&lt;AgentConfig&gt;): Agent {
+  return new Agent({
+    model: &quot;sonnet-4.6&quot;,
+    provider: &quot;anthropic&quot;,
+    systemPrompt: &quot;You are a test agent&quot;,
+    ...config,
+  })
+}
+</code></pre>
+<h3>6.3 Cleanup</h3>
+<p>Clean up timers, env vars, globals, mocks, sockets, temp dirs:</p>
+<pre><code class="language-typescript">afterEach(() =&gt; {
+  vi.clearAllMocks()
+  vi.useRealTimers()
+  delete process.env.TEST_FLAG
+})
+</code></pre>
+<hr>
+<h2>7. Live Testing</h2>
+<h3>7.1 Live Test Mode</h3>
+<pre><code class="language-bash">OPENCLAW_LIVE_TEST=1 pnpm test:live
+</code></pre>
+<h3>7.2 Quiet Logs</h3>
+<pre><code class="language-bash">OPENCLAW_LIVE_TEST_QUIET=0 pnpm test:live
+# Shows full logs
+</code></pre>
+<h3>7.3 When to Use</h3>
+<p>Live tests for:</p>
+<ul>
+<li>Actual provider API calls</li>
+<li>Real database/storage operations</li>
+<li>End-to-end flows that need real infrastructure</li>
+</ul>
+<hr>
+<h2>8. Performance Testing</h2>
+<h3>8.1 Import Drag</h3>
+<pre><code class="language-bash">pnpm test:perf:imports src/agents/pi-embedded-runner/index.ts
+</code></pre>
+<p>Reports:</p>
+<ul>
+<li>Total parse time</li>
+<li>Total import time</li>
+<li>Breakdown by imported module</li>
+</ul>
+<h3>8.2 Hotspot Discovery</h3>
+<pre><code class="language-bash">pnpm test:perf:hotspots --limit 20
+</code></pre>
+<p>Finds the 20 slowest test files.</p>
+<hr>
+<h2>9. Architecture for Testability</h2>
+<h3>9.1 Named Composition</h3>
+<p>Extract production logic into named helpers that can be tested independently:</p>
+<pre><code class="language-typescript">// GOOD: Named, testable helper
+export function buildInferenceParams(options: InferenceOptions): InferenceParams {
+  return {
+    model: options.model,
+    messages: options.messages,
+    maxTokens: options.maxTokens ?? 4096,
+    temperature: options.temperature ?? 1.0,
+  }
+}
+
+// Test directly
+test(&quot;buildInferenceParams applies defaults&quot;, () =&gt; {
+  const params = buildInferenceParams({ model: &quot;claude-3&quot;, messages: [] })
+  expect(params.maxTokens).toBe(4096)
+  expect(params.temperature).toBe(1.0)
+})
+</code></pre>
+<h3>9.2 NOT:</h3>
+<pre><code class="language-typescript">// BAD: Inline anonymous logic in the inference method
+async runInference(options: InferenceOptions) {
+  const params = {
+    model: options.model,
+    messages: options.messages,
+    maxTokens: options.maxTokens ?? 4096,  // Can&#39;t test this in isolation
+  }
+  // ...
+}
+</code></pre>
+<hr>
+<h2>10. Key Files</h2>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Lines</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>vitest.config.ts</code></td>
+<td>~100</td>
+<td>Vitest configuration</td>
+</tr>
+<tr>
+<td><code>test/helpers/AGENTS.md</code></td>
+<td>~50</td>
+<td>Test helper rules</td>
+</tr>
+<tr>
+<td><code>test/helpers/channels/AGENTS.md</code></td>
+<td>~50</td>
+<td>Channel test rules</td>
+</tr>
+<tr>
+<td><code>.artifacts/vitest-shard-timings.json</code></td>
+<td>—</td>
+<td>Shard timing data</td>
+</tr>
+<tr>
+<td><code>docs/help/testing.md</code></td>
+<td>~200</td>
+<td>Full testing guide</td>
+</tr>
+</tbody></table>
+
+  </main>
+</body>
+</html>
