@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>bundled plugins</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      line-height: 1.6;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px;
+      color: #333;
+    }
+    .sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 250px;
+      height: 100vh;
+      background: #f8f9fa;
+      border-right: 1px solid #ddd;
+      padding: 20px;
+      overflow-y: auto;
+    }
+    .sidebar h3 { margin-top: 0; color: #4f46e5; }
+    .sidebar ul { list-style: none; padding: 0; }
+    .sidebar li { margin: 8px 0; }
+    .sidebar a { color: #333; text-decoration: none; font-size: 14px; }
+    .sidebar a:hover { color: #4f46e5; }
+    .content { margin-left: 270px; padding: 20px; }
+    pre { background: #1f2937; color: #e5e7eb; padding: 15px; border-radius: 8px; overflow-x: auto; }
+    code { background: #e5e7eb; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+    pre code { background: transparent; color: inherit; }
+    blockquote { border-left: 4px solid #4f46e5; background: #f9fafb; padding: 10px 20px; margin: 1em 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+    th { background: #f3f4f6; }
+    h1, h2, h3 { color: #1f2937; }
+    .home-link { font-size: 24px; font-weight: bold; color: #4f46e5; text-decoration: none; }
+    a { color: #4f46e5; }
+    @media (max-width: 768px) {
+      .sidebar { position: static; width: 100%; height: auto; border-right: none; border-bottom: 1px solid #ddd; }
+      .content { margin-left: 0; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="sidebar">
+    <h3><a href="/" class="home-link">OpenClaw</a></h3>
+    <ul>
+  <li><a href="/01-overview">01 - overview</a></li>
+  <li><a href="/02-plugin-system">02 - plugin system</a></li>
+  <li><a href="/03-channel-system">03 - channel system</a></li>
+  <li><a href="/04-provider-system">04 - provider system</a></li>
+  <li><a href="/05-gateway-protocol">05 - gateway protocol</a></li>
+  <li><a href="/06-agent-system">06 - agent system</a></li>
+  <li><a href="/07-acp">07 - acp</a></li>
+  <li><a href="/08-config-system">08 - config system</a></li>
+  <li><a href="/09-memory-system">09 - memory system</a></li>
+  <li><a href="/10-ui-frontend">10 - ui frontend</a></li>
+  <li><a href="/11-tui">11 - tui</a></li>
+  <li><a href="/12-mobile-apps">12 - mobile apps</a></li>
+  <li><a href="/13-bundled-plugins">13 - bundled plugins</a></li>
+  <li><a href="/14-packages">14 - packages</a></li>
+  <li><a href="/15-cli-daemon">15 - cli daemon</a></li>
+  <li><a href="/16-testing">16 - testing</a></li>
+  <li><a href="/17-acp-deep-dive">17 - acp deep dive</a></li>
+  <li><a href="/18-infra-hooks-tasks">18 - infra hooks tasks</a></li>
+  <li><a href="/19-vendor-skills-python">19 - vendor skills python</a></li>
+  <li><a href="/20-plugin-loader-deep-dive">20 - plugin loader deep dive</a></li>
+  <li><a href="/21-channel-deep-dive">21 - channel deep dive</a></li>
+  <li><a href="/22-embedded-runner-deep-dive">22 - embedded runner deep dive</a></li>
+  <li><a href="/23-gateway-server-methods">23 - gateway server methods</a></li>
+  <li><a href="/24-telegram-extension">24 - telegram extension</a></li>
+    </ul>
+  </nav>
+  <main class="content">
+    <h1>Bundled Plugins (extensions/) Reference</h1>
+<blockquote>
+<p><em>Part of the OpenClaw Architecture Analysis — see <a href="./01-overview.md">01-overview.md</a></em></p>
+</blockquote>
+<hr>
+<h2>1. Overview</h2>
+<p>The <code>extensions/</code> directory contains <strong>~130 bundled plugins</strong> that are bundled into the OpenClaw installation. They follow the same boundary rules as third-party plugins — they MUST NOT import core <code>src/**</code> or another extension&#39;s <code>src/**</code>, and can only use <code>openclaw/plugin-sdk/*</code> and their own local barrels.</p>
+<hr>
+<h2>2. Complete Plugin Directory</h2>
+<h3>2.1 Provider Plugins (Text Inference)</h3>
+<table>
+<thead>
+<tr>
+<th>Extension</th>
+<th>Provider</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>openai</code></td>
+<td>OpenAI</td>
+<td>Full-featured: text, CLI, speech, transcription, voice, media, image, video</td>
+</tr>
+<tr>
+<td><code>anthropic</code></td>
+<td>Anthropic</td>
+<td>Text, CLI, media understanding</td>
+</tr>
+<tr>
+<td><code>anthropic-vertex</code></td>
+<td>Anthropic via Vertex AI</td>
+<td>Text</td>
+</tr>
+<tr>
+<td><code>google</code></td>
+<td>Google Gemini</td>
+<td>Text, web search, image, music, video</td>
+</tr>
+<tr>
+<td><code>amazon-bedrock</code></td>
+<td>AWS Bedrock</td>
+<td>Text, embedding</td>
+</tr>
+<tr>
+<td><code>amazon-bedrock-mantle</code></td>
+<td>Bedrock Mantle</td>
+<td>Text</td>
+</tr>
+<tr>
+<td><code>alibaba</code></td>
+<td>Alibaba/Qwen</td>
+<td>Video generation</td>
+</tr>
+<tr>
+<td><code>mistral</code></td>
+<td>Mistral AI</td>
+<td>Text</td>
+</tr>
+<tr>
+<td><code>groq</code></td>
+<td>Groq</td>
+<td>Text</td>
+</tr>
+<tr>
+<td><code>openrouter</code></td>
+<td>OpenRouter</td>
+<td>Text</td>
+</tr>
+<tr>
+<td><code>together</code></td>
+<td>Together AI</td>
+<td>Text</td>
+</tr>
+<tr>
+<td><code>perplexity</code></td>
+<td>Perplexity</td>
+<td>Text, web search</td>
+</tr>
+<tr>
+<td><code>cohere</code></td>
+<td>Cohere</td>
+<td>Text, embedding</td>
+</tr>
+<tr>
+<td><code>deepseek</code></td>
+<td>DeepSeek</td>
+<td>Text</td>
+</tr>
+<tr>
+<td><code>moonshot</code></td>
+<td>Moonshot AI</td>
+<td>Text</td>
+</tr>
+<tr>
+<td><code>minimax</code></td>
+<td>MiniMax</td>
+<td>Text</td>
+</tr>
+<tr>
+<td><code>kimi-coding</code></td>
+<td>Kimi Coding</td>
+<td>Text</td>
+</tr>
+<tr>
+<td><code>xai</code></td>
+<td>xAI</td>
+<td>Text</td>
+</tr>
+<tr>
+<td><code>volcengine</code></td>
+<td>Volcano Engine</td>
+<td>Text</td>
+</tr>
+<tr>
+<td><code>qianfan</code></td>
+<td>Qianfan/Baidu</td>
+<td>Text</td>
+</tr>
+<tr>
+<td><code>voyage</code></td>
+<td>Voyage AI</td>
+<td>Embedding</td>
+</tr>
+<tr>
+<td><code>llmstudio</code></td>
+<td>LM Studio</td>
+<td>Text (local)</td>
+</tr>
+<tr>
+<td><code>ollama</code></td>
+<td>Ollama</td>
+<td>Text (local)</td>
+</tr>
+<tr>
+<td><code>fireworks</code></td>
+<td>Fireworks AI</td>
+<td>Text</td>
+</tr>
+<tr>
+<td><code>sglang</code></td>
+<td>SGLang</td>
+<td>Text</td>
+</tr>
+<tr>
+<td><code>vllm</code></td>
+<td>vLLM</td>
+<td>Text</td>
+</tr>
+<tr>
+<td><code>cloudflare-ai-gateway</code></td>
+<td>Cloudflare AI Gateway</td>
+<td>Text</td>
+</tr>
+<tr>
+<td><code>vercel-ai-gateway</code></td>
+<td>Vercel AI Gateway</td>
+<td>Text</td>
+</tr>
+<tr>
+<td><code>litellm</code></td>
+<td>LiteLLM</td>
+<td>Text (proxy)</td>
+</tr>
+<tr>
+<td><code>acpx</code></td>
+<td>ACPX</td>
+<td>ACP protocol backend (embedded runtime)</td>
+</tr>
+</tbody></table>
+<h3>2.2 Channel Plugins (Messaging / Social)</h3>
+<table>
+<thead>
+<tr>
+<th>Extension</th>
+<th>Platform</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>telegram</code></td>
+<td>Telegram</td>
+<td>Full messaging + streaming + security</td>
+</tr>
+<tr>
+<td><code>discord</code></td>
+<td>Discord</td>
+<td>Bot + subagent hooks</td>
+</tr>
+<tr>
+<td><code>slack</code></td>
+<td>Slack</td>
+<td>HTTP routes</td>
+</tr>
+<tr>
+<td><code>msteams</code></td>
+<td>Microsoft Teams</td>
+<td></td>
+</tr>
+<tr>
+<td><code>mattermost</code></td>
+<td>Mattermost</td>
+<td></td>
+</tr>
+<tr>
+<td><code>matrix</code></td>
+<td>Matrix</td>
+<td></td>
+</tr>
+<tr>
+<td><code>irc</code></td>
+<td>IRC</td>
+<td></td>
+</tr>
+<tr>
+<td><code>feishu</code></td>
+<td>Feishu/Lark</td>
+<td></td>
+</tr>
+<tr>
+<td><code>nextcloud-talk</code></td>
+<td>Nextcloud Talk</td>
+<td></td>
+</tr>
+<tr>
+<td><code>googlechat</code></td>
+<td>Google Chat</td>
+<td></td>
+</tr>
+<tr>
+<td><code>signal</code></td>
+<td>Signal</td>
+<td></td>
+</tr>
+<tr>
+<td><code>twitch</code></td>
+<td>Twitch</td>
+<td>Chat</td>
+</tr>
+<tr>
+<td><code>line</code></td>
+<td>LINE</td>
+<td></td>
+</tr>
+<tr>
+<td><code>qqbot</code></td>
+<td>QQ</td>
+<td></td>
+</tr>
+<tr>
+<td><code>zalo</code></td>
+<td>Zalo</td>
+<td></td>
+</tr>
+<tr>
+<td><code>whatsapp</code></td>
+<td>WhatsApp</td>
+<td></td>
+</tr>
+<tr>
+<td><code>bluebubbles</code></td>
+<td>BlueBubbles</td>
+<td>iMessage</td>
+</tr>
+<tr>
+<td><code>imessage</code></td>
+<td>iMessage</td>
+<td></td>
+</tr>
+<tr>
+<td><code>synology-chat</code></td>
+<td>Synology Chat</td>
+<td></td>
+</tr>
+<tr>
+<td><code>nostr</code></td>
+<td>Nostr</td>
+<td></td>
+</tr>
+</tbody></table>
+<h3>2.3 Tool / Capability Plugins</h3>
+<table>
+<thead>
+<tr>
+<th>Extension</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>browser</code></td>
+<td>Tool</td>
+<td>Default browser automation tool</td>
+</tr>
+<tr>
+<td><code>acpx</code></td>
+<td>Capability</td>
+<td>ACP runtime with session/transport</td>
+</tr>
+<tr>
+<td><code>memory-core</code></td>
+<td>Memory</td>
+<td>File-backed memory + search tools</td>
+</tr>
+<tr>
+<td><code>memory-lancedb</code></td>
+<td>Memory</td>
+<td>LanceDB vector backend</td>
+</tr>
+<tr>
+<td><code>memory-wiki</code></td>
+<td>Memory</td>
+<td>Wiki-style memory</td>
+</tr>
+<tr>
+<td><code>image-generation-core</code></td>
+<td>Capability</td>
+<td>Image generation abstractions</td>
+</tr>
+<tr>
+<td><code>video-generation-core</code></td>
+<td>Capability</td>
+<td>Video generation abstractions</td>
+</tr>
+<tr>
+<td><code>media-understanding-core</code></td>
+<td>Capability</td>
+<td>Media understanding</td>
+</tr>
+<tr>
+<td><code>speech-core</code></td>
+<td>Capability</td>
+<td>Speech/TTS abstractions</td>
+</tr>
+<tr>
+<td><code>llm-task</code></td>
+<td>Tool</td>
+<td>Structured subtask execution</td>
+</tr>
+<tr>
+<td><code>device-pair</code></td>
+<td>Capability</td>
+<td>Device pairing</td>
+</tr>
+<tr>
+<td><code>thread-ownership</code></td>
+<td>Capability</td>
+<td>Thread ownership management</td>
+</tr>
+<tr>
+<td><code>webhooks</code></td>
+<td>Tool</td>
+<td>Webhook ingress/targets</td>
+</tr>
+<tr>
+<td><code>diffs</code></td>
+<td>Tool</td>
+<td>Diff utilities</td>
+</tr>
+<tr>
+<td><code>codex</code></td>
+<td>Capability</td>
+<td>Codex integration</td>
+</tr>
+<tr>
+<td><code>github-copilot</code></td>
+<td>Capability</td>
+<td>GitHub Copilot login/token</td>
+</tr>
+<tr>
+<td><code>brave</code></td>
+<td>Search</td>
+<td>Brave search provider</td>
+</tr>
+<tr>
+<td><code>duckduckgo</code></td>
+<td>Search</td>
+<td>DuckDuckGo search</td>
+</tr>
+<tr>
+<td><code>exa</code></td>
+<td>Search</td>
+<td>Exa web search</td>
+</tr>
+<tr>
+<td><code>tavily</code></td>
+<td>Search</td>
+<td>Tavily search</td>
+</tr>
+<tr>
+<td><code>searxng</code></td>
+<td>Search</td>
+<td>SearXNG meta-search</td>
+</tr>
+<tr>
+<td><code>firecrawl</code></td>
+<td>Fetch</td>
+<td>Firecrawl web fetch</td>
+</tr>
+<tr>
+<td><code>elevenlabs</code></td>
+<td>Speech</td>
+<td>ElevenLabs TTS</td>
+</tr>
+<tr>
+<td><code>deepgram</code></td>
+<td>Transcription</td>
+<td>DeepGram</td>
+</tr>
+<tr>
+<td><code>fal</code></td>
+<td>Image</td>
+<td>Fal.ai image generation</td>
+</tr>
+<tr>
+<td><code>runway</code></td>
+<td>Video</td>
+<td>Runway video</td>
+</tr>
+<tr>
+<td><code>stepfun</code></td>
+<td>Provider</td>
+<td>StepFun</td>
+</tr>
+<tr>
+<td><code>comfy</code></td>
+<td>Image</td>
+<td>ComfyUI</td>
+</tr>
+<tr>
+<td><code>arcee</code></td>
+<td>Provider</td>
+<td>Arcee</td>
+</tr>
+<tr>
+<td><code>chutes</code></td>
+<td>Provider</td>
+<td>Chutes</td>
+</tr>
+<tr>
+<td><code>open-prose</code></td>
+<td>Capability</td>
+<td>OpenProse</td>
+</tr>
+<tr>
+<td><code>openshell</code></td>
+<td>Tool</td>
+<td>OpenShell</td>
+</tr>
+<tr>
+<td><code>opencode</code></td>
+<td>Tool</td>
+<td>OpenCode</td>
+</tr>
+<tr>
+<td><code>opencode-go</code></td>
+<td>Tool</td>
+<td>OpenCode Go</td>
+</tr>
+<tr>
+<td><code>kilocode</code></td>
+<td>Tool</td>
+<td>KiloCode</td>
+</tr>
+<tr>
+<td><code>lobster</code></td>
+<td>Tool</td>
+<td>Lobster</td>
+</tr>
+<tr>
+<td><code>phone-control</code></td>
+<td>Capability</td>
+<td>Phone control</td>
+</tr>
+<tr>
+<td><code>voice-call</code></td>
+<td>Capability</td>
+<td>Voice call</td>
+</tr>
+<tr>
+<td><code>talk-voice</code></td>
+<td>Capability</td>
+<td>Talk voice</td>
+</tr>
+<tr>
+<td><code>qa-channel</code></td>
+<td>Protocol</td>
+<td>QA channel</td>
+</tr>
+<tr>
+<td><code>qa-lab</code></td>
+<td>Tool</td>
+<td>QA lab runner</td>
+</tr>
+<tr>
+<td><code>qa-matrix</code></td>
+<td>Tool</td>
+<td>QA matrix runner</td>
+</tr>
+<tr>
+<td><code>diagnostics-otel</code></td>
+<td>Capability</td>
+<td>OpenTelemetry</td>
+</tr>
+<tr>
+<td><code>copilot-proxy</code></td>
+<td>Capability</td>
+<td>Copilot proxy</td>
+</tr>
+<tr>
+<td><code>microsoft-foundry</code></td>
+<td>Provider</td>
+<td>Microsoft Foundry</td>
+</tr>
+<tr>
+<td><code>byteplus</code></td>
+<td>Provider</td>
+<td>BytePlus</td>
+</tr>
+<tr>
+<td><code>active-memory</code></td>
+<td>Memory</td>
+<td>Active memory</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>3. Standard Extension Layout</h2>
+<h3>3.1 Provider Plugin Layout</h3>
+<pre><code>extensions/&lt;id&gt;/
+├── index.ts                    # Entry point (definePluginEntry or defineSingleProviderPluginEntry)
+├── openclaw.plugin.json       # Manifest (required)
+├── package.json
+├── api.ts                    # Public API surface (optional)
+├── runtime-api.ts            # Runtime seam (optional)
+├── setup-api.ts              # Setup-only surface (optional)
+├── tsconfig.json
+└── src/                      # Private implementation (not imported by core)
+    ├── provider.ts           # Main provider implementation
+    ├── auth.ts               # Auth handling
+    ├── catalog.ts            # Model catalog
+    └── ... (more)
+</code></pre>
+<h3>3.2 Channel Plugin Layout</h3>
+<pre><code>extensions/&lt;id&gt;/
+├── index.ts                    # Entry point (defineBundledChannelEntry)
+├── openclaw.plugin.json       # Manifest
+├── package.json
+├── channel-plugin-api.js     # Main plugin export (lazy-loaded)
+├── secret-contract-api.js    # Secrets export (lazy-loaded)
+├── runtime-api.js             # Runtime setter (lazy-loaded)
+├── account-inspect-api.js     # Account inspector (lazy-loaded)
+├── tsconfig.json
+└── src/                      # Private implementation
+    ├── channel-plugin.ts      # Main ChannelPlugin implementation
+    ├── messaging.ts          # Messaging adapter
+    ├── auth.ts               # Auth handling
+    ├── webhook.ts            # Webhook handling
+    └── ... (more)
+</code></pre>
+<hr>
+<h2>4. Entry Point Patterns</h2>
+<h3>4.1 Provider Entry (Single)</h3>
+<pre><code class="language-typescript">// extensions/mistral/index.ts
+import { defineSingleProviderPluginEntry } from &quot;openclaw/plugin-sdk/provider-entry&quot;
+import { buildMistralProvider } from &quot;./src/provider&quot;
+
+export default defineSingleProviderPluginEntry({
+  id: &quot;mistral&quot;,
+  name: &quot;Mistral&quot;,
+  description: &quot;Mistral AI provider&quot;,
+  provider: buildMistralProvider(),
+})
+</code></pre>
+<h3>4.2 Provider Entry (Multi)</h3>
+<pre><code class="language-typescript">// extensions/openai/index.ts
+import { definePluginEntry } from &quot;openclaw/plugin-sdk/plugin-entry&quot;
+
+export default definePluginEntry({
+  id: &quot;openai&quot;,
+  name: &quot;OpenAI Provider&quot;,
+  register(api) {
+    api.registerProvider(buildProviderWithPromptContribution(buildOpenAIProvider()))
+    api.registerProvider(buildProviderWithPromptContribution(buildOpenAICodexProviderPlugin()))
+    // ... more registrations
+  },
+})
+</code></pre>
+<h3>4.3 Channel Entry</h3>
+<pre><code class="language-typescript">// extensions/telegram/index.ts
+import { defineBundledChannelEntry } from &quot;openclaw/plugin-sdk/channel-entry-contract&quot;
+
+export default defineBundledChannelEntry({
+  id: &quot;telegram&quot;,
+  name: &quot;Telegram&quot;,
+  importMetaUrl: import.meta.url,
+  plugin: { specifier: &quot;./channel-plugin-api.js&quot;, exportName: &quot;telegramPlugin&quot; },
+  secrets: { specifier: &quot;./secret-contract-api.js&quot;, exportName: &quot;channelSecrets&quot; },
+  runtime: { specifier: &quot;./runtime-api.js&quot;, exportName: &quot;setTelegramRuntime&quot; },
+  accountInspect: { specifier: &quot;./account-inspect-api.js&quot;, exportName: &quot;inspectTelegramReadOnlyAccount&quot; },
+})
+</code></pre>
+<hr>
+<h2>5. Manifest Example</h2>
+<pre><code class="language-json">{
+  &quot;id&quot;: &quot;openai&quot;,
+  &quot;version&quot;: &quot;1.0.0&quot;,
+  &quot;configSchema&quot;: {
+    &quot;fields&quot;: [
+      {
+        &quot;key&quot;: &quot;apiKey&quot;,
+        &quot;type&quot;: &quot;secret&quot;,
+        &quot;label&quot;: &quot;API Key&quot;,
+        &quot;description&quot;: &quot;Your OpenAI API key&quot;,
+        &quot;required&quot;: true
+      },
+      {
+        &quot;key&quot;: &quot;organization&quot;,
+        &quot;type&quot;: &quot;string&quot;,
+        &quot;label&quot;: &quot;Organization ID&quot;,
+        &quot;description&quot;: &quot;Optional organization ID&quot;,
+        &quot;required&quot;: false
+      }
+    ]
+  },
+  &quot;providers&quot;: [&quot;openai&quot;, &quot;openai-codex&quot;],
+  &quot;modelSupport&quot;: {
+    &quot;modelPrefixes&quot;: [&quot;gpt-&quot;, &quot;o1-&quot;, &quot;o3-&quot;]
+  },
+  &quot;providerEndpoints&quot;: [
+    { &quot;kind&quot;: &quot;baseUrl&quot;, &quot;baseUrl&quot;: &quot;https://api.openai.com/v1&quot; }
+  ],
+  &quot;activation&quot;: [
+    { &quot;kind&quot;: &quot;provider&quot;, &quot;provider&quot;: &quot;openai&quot; },
+    { &quot;kind&quot;: &quot;provider&quot;, &quot;provider&quot;: &quot;openai-codex&quot; }
+  ],
+  &quot;secrets&quot;: {
+    &quot;fields&quot;: [&quot;apiKey&quot;]
+  }
+}
+</code></pre>
+<hr>
+<h2>6. Extension SDK Subpaths (295 entries)</h2>
+<p>The Plugin SDK exposes a large surface under <code>openclaw/plugin-sdk/</code>:</p>
+<h3>Core</h3>
+<ul>
+<li><code>openclaw/plugin-sdk</code> — main barrel</li>
+<li><code>openclaw/plugin-sdk/core</code> — full SDK re-export</li>
+<li><code>openclaw/plugin-sdk/plugin-entry</code> — <code>definePluginEntry()</code></li>
+<li><code>openclaw/plugin-sdk/provider-entry</code> — <code>defineSingleProviderPluginEntry()</code></li>
+<li><code>openclaw/plugin-sdk/channel-entry-contract</code> — <code>defineBundledChannelEntry()</code></li>
+<li><code>openclaw/plugin-sdk/channel-contract</code> — channel type definitions</li>
+</ul>
+<h3>Provider</h3>
+<ul>
+<li><code>openclaw/plugin-sdk/provider-auth</code> — auth method creation</li>
+<li><code>openclaw/plugin-sdk/provider-catalog-shared</code> — shared catalog building</li>
+<li><code>openclaw/plugin-sdk/provider-env-vars</code> — environment variable handling</li>
+<li><code>openclaw/plugin-sdk/provider-http</code> — HTTP client</li>
+<li><code>openclaw/plugin-sdk/provider-model-types</code> — model types</li>
+<li><code>openclaw/plugin-sdk/provider-stream-family</code> — stream wrapper family</li>
+<li><code>openclaw/plugin-sdk/provider-tools</code> — tool schema compat</li>
+<li><code>openclaw/plugin-sdk/provider-model-shared</code> — model cloning</li>
+</ul>
+<h3>Runtime</h3>
+<ul>
+<li><code>openclaw/plugin-sdk/runtime</code> — main runtime interface</li>
+<li><code>openclaw/plugin-sdk/agent-runtime</code> — agent harness</li>
+<li><code>openclaw/plugin-sdk/channel-runtime</code> — channel runtime</li>
+<li><code>openclaw/plugin-sdk/acp-runtime</code> — ACP runtime</li>
+</ul>
+<h3>Capability-Specific</h3>
+<ul>
+<li><code>openclaw/plugin-sdk/image-generation</code></li>
+<li><code>openclaw/plugin-sdk/music-generation</code></li>
+<li><code>openclaw/plugin-sdk/video-generation</code></li>
+<li><code>openclaw/plugin-sdk/speech</code></li>
+<li><code>openclaw/plugin-sdk/realtime-transcription</code></li>
+<li><code>openclaw/plugin-sdk/realtime-voice</code></li>
+<li><code>openclaw/plugin-sdk/media-understanding</code></li>
+<li><code>openclaw/plugin-sdk/memory-host-*</code> (22+ subpaths)</li>
+</ul>
+<hr>
+<h2>7. OpenClawKit Swift Exports</h2>
+<p>From <code>apps/shared/OpenClawKit/Package.swift</code>:</p>
+<pre><code class="language-swift">targets: [
+  .target(name: &quot;OpenClawProtocol&quot;),
+  .target(name: &quot;OpenClawKit&quot;),
+  .target(name: &quot;OpenClawChatUI&quot;),
+]
+</code></pre>
+<p><strong>OpenClawProtocol:</strong> Gateway wire protocol types (same as TypeScript gateway protocol)</p>
+<p><strong>OpenClawKit:</strong> GatewayChannel (WebSocket), TLS, discovery, command handlers</p>
+<p><strong>OpenClawChatUI:</strong> Reusable chat UI components (ChatComposer, ChatView, ChatMarkdownRenderer)</p>
+
+  </main>
+</body>
+</html>

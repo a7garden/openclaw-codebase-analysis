@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>overview</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      line-height: 1.6;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px;
+      color: #333;
+    }
+    .sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 250px;
+      height: 100vh;
+      background: #f8f9fa;
+      border-right: 1px solid #ddd;
+      padding: 20px;
+      overflow-y: auto;
+    }
+    .sidebar h3 { margin-top: 0; color: #4f46e5; }
+    .sidebar ul { list-style: none; padding: 0; }
+    .sidebar li { margin: 8px 0; }
+    .sidebar a { color: #333; text-decoration: none; font-size: 14px; }
+    .sidebar a:hover { color: #4f46e5; }
+    .content { margin-left: 270px; padding: 20px; }
+    pre { background: #1f2937; color: #e5e7eb; padding: 15px; border-radius: 8px; overflow-x: auto; }
+    code { background: #e5e7eb; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+    pre code { background: transparent; color: inherit; }
+    blockquote { border-left: 4px solid #4f46e5; background: #f9fafb; padding: 10px 20px; margin: 1em 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+    th { background: #f3f4f6; }
+    h1, h2, h3 { color: #1f2937; }
+    .home-link { font-size: 24px; font-weight: bold; color: #4f46e5; text-decoration: none; }
+    a { color: #4f46e5; }
+    @media (max-width: 768px) {
+      .sidebar { position: static; width: 100%; height: auto; border-right: none; border-bottom: 1px solid #ddd; }
+      .content { margin-left: 0; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="sidebar">
+    <h3><a href="/" class="home-link">OpenClaw</a></h3>
+    <ul>
+  <li><a href="/01-overview">01 - overview</a></li>
+  <li><a href="/02-plugin-system">02 - plugin system</a></li>
+  <li><a href="/03-channel-system">03 - channel system</a></li>
+  <li><a href="/04-provider-system">04 - provider system</a></li>
+  <li><a href="/05-gateway-protocol">05 - gateway protocol</a></li>
+  <li><a href="/06-agent-system">06 - agent system</a></li>
+  <li><a href="/07-acp">07 - acp</a></li>
+  <li><a href="/08-config-system">08 - config system</a></li>
+  <li><a href="/09-memory-system">09 - memory system</a></li>
+  <li><a href="/10-ui-frontend">10 - ui frontend</a></li>
+  <li><a href="/11-tui">11 - tui</a></li>
+  <li><a href="/12-mobile-apps">12 - mobile apps</a></li>
+  <li><a href="/13-bundled-plugins">13 - bundled plugins</a></li>
+  <li><a href="/14-packages">14 - packages</a></li>
+  <li><a href="/15-cli-daemon">15 - cli daemon</a></li>
+  <li><a href="/16-testing">16 - testing</a></li>
+  <li><a href="/17-acp-deep-dive">17 - acp deep dive</a></li>
+  <li><a href="/18-infra-hooks-tasks">18 - infra hooks tasks</a></li>
+  <li><a href="/19-vendor-skills-python">19 - vendor skills python</a></li>
+  <li><a href="/20-plugin-loader-deep-dive">20 - plugin loader deep dive</a></li>
+  <li><a href="/21-channel-deep-dive">21 - channel deep dive</a></li>
+  <li><a href="/22-embedded-runner-deep-dive">22 - embedded runner deep dive</a></li>
+  <li><a href="/23-gateway-server-methods">23 - gateway server methods</a></li>
+  <li><a href="/24-telegram-extension">24 - telegram extension</a></li>
+    </ul>
+  </nav>
+  <main class="content">
+    <h1>OpenClaw Codebase Architecture Analysis</h1>
+<blockquote>
+<p><strong>Project:</strong> OpenClaw — AI Agent Platform with Multi-Channel, Multi-Provider Support
+<strong>Repository:</strong> <a href="https://github.com/openclaw/openclaw">https://github.com/openclaw/openclaw</a>
+<strong>Generated:</strong> 2026-04-21
+<strong>Scope:</strong> Full monorepo including <code>src/</code>, <code>extensions/</code>, <code>ui/</code>, <code>packages/</code>, <code>apps/</code>, <code>docs/</code>
+<strong>Total Source Size:</strong> ~1.35M+ lines of TypeScript + Swift + Kotlin + other languages</p>
+</blockquote>
+<hr>
+<h2>Table of Contents</h2>
+<ol>
+<li><a href="#1-system-overview">System Overview</a> — What OpenClaw is and how it fits together</li>
+<li><a href="#2-architecture-principles">Architecture Principles</a> — Core rules that govern the design</li>
+<li><a href="#3-directory-structure">Directory Structure</a> — Top-level layout and mapping</li>
+<li><a href="#4-entry-points--boot-chain">Entry Points &amp; Boot Chain</a> — How the application starts</li>
+<li><a href="#5-plugin-system">Plugin System</a> — The extension architecture</li>
+<li><a href="#6-channel-system">Channel System</a> — Messaging channel plugins</li>
+<li><a href="#7-provider-system">Provider System</a> — Model inference providers</li>
+<li><a href="#8-gateway-protocol">Gateway Protocol</a> — WebSocket-based client/server communication</li>
+<li><a href="#9-agent-system">Agent System</a> — Agent runtime and subagent management</li>
+<li><a href="#10-acp-agent-communication-protocol">ACP (Agent Communication Protocol)</a> — Inter-agent messaging</li>
+<li><a href="#11-configuration-system">Configuration System</a> — Config schema, loading, normalization</li>
+<li><a href="#12-memory-system">Memory System</a> — Memory plugins and embedding infrastructure</li>
+<li><a href="#13-frontend-architecture-ui">Frontend Architecture (UI)</a> — Lit web components, routing, gateway client</li>
+<li><a href="#14-terminal-ui-tui">Terminal UI (TUI)</a> — CLI terminal interface</li>
+<li><a href="#15-mobile-apps">Mobile Apps</a> — iOS, Android, macOS, Swabble</li>
+<li><a href="#16-bundled-plugins-extensions">Bundled Plugins (extensions/)</a> — 100+ built-in plugins</li>
+<li><a href="#17-acp-deep-dive">ACP Deep Dive</a> — Translator, session store, control-plane manager, runtime interface</li>
+<li><a href="#18-infrastructure-hooks--tasks">Infrastructure, Hooks &amp; Tasks</a> — Retry, heartbeat, events, hook system, SQLite tasks</li>
+<li><a href="#19-vendor-code--python-skills">Vendor Code &amp; Python Skills</a> — Google A2UI, Python skills ecosystem, baileys patches</li>
+<li><a href="#20-plugin-loader-deep-dive">Plugin Loader Deep Dive</a> — Full 12-stage loading sequence, lazy runtime proxy</li>
+<li><a href="#21-channel-system-deep-dive">Channel System Deep Dive</a> — ~250 files, 12 adapter types, binding system</li>
+<li><a href="#22-embedded-runner-deep-dive">Embedded Runner Deep Dive</a> — pi-embedded-runner, 12-stage stream wrapper, auth rotation</li>
+<li><a href="#23-gateway-server-methods">Gateway Server Methods</a> — ~110 methods, 28 functional categories</li>
+<li><a href="#24-telegram-extension">Telegram Extension</a> — grammY polling/webhook, streaming lanes, dedupe, media handling</li>
+<li><a href="#25-packages">Packages</a> — plugin-sdk, memory-host-sdk, plugin-package-contract</li>
+<li><a href="#26-cli--daemon">CLI &amp; Daemon</a> — Command structure and daemon lifecycle</li>
+<li><a href="#27-testing-strategy">Testing Strategy</a> — Test layout and patterns</li>
+<li><a href="#28-key-files-reference">Key Files Reference</a> — Essential files by topic</li>
+</ol>
+<hr>
+<h2>1. System Overview</h2>
+<p>OpenClaw is a <strong>platform for running AI agents</strong> that can connect to multiple messaging channels (Telegram, Discord, Slack, etc.) and multiple AI model providers (OpenAI, Anthropic, Google, etc.), exposing those agents through a WebSocket-based gateway to various frontends (web UI, mobile apps, terminal UI).</p>
+<pre><code>                    ┌──────────────────────────────────────────────────────┐
+                    │                    OpenClaw Core                     │
+                    │  ┌─────────────┐  ┌──────────────┐  ┌─────────────┐ │
+                    │  │   Gateway   │  │   Plugin     │  │    Agent    │ │
+                    │  │  Protocol   │  │   Loader     │  │   Runtime   │ │
+                    │  └─────────────┘  └──────────────┘  └─────────────┘ │
+                    └──────────────────────┬───────────────────────────────┘
+                                             │
+           ┌─────────────────────────────────┼─────────────────────────────────┐
+           │                                 │                                 │
+     ┌─────┴─────┐                    ┌─────┴─────┐                    ┌─────┴─────┐
+     │  Mobile   │                    │    Web    │                    │   TUI     │
+     │   Apps    │                    │     UI    │                    │ (Terminal)│
+     │ iOS/Andr  │                    │   (Lit)   │                    │           │
+     └───────────┘                    └───────────┘                    └───────────┘
+                                             │
+              ┌──────────────────────────────┴──────────────────────────────┐
+              │                        Channels                              │
+              │  Telegram  Discord  Slack  Matrix  IRC  Feishu  WhatsApp ...  │
+              └──────────────────────────────────────────────────────────────┘
+                                             │
+              ┌──────────────────────────────┴──────────────────────────────┐
+              │                      Providers                               │
+              │  OpenAI  Anthropic  Google  Amazon  Mistral  Groq  Ollama ... │
+              └──────────────────────────────────────────────────────────────┘
+</code></pre>
+<p><strong>Core responsibilities:</strong></p>
+<ul>
+<li>Load and manage 100+ bundled plugins (providers, channels, tools, memory backends)</li>
+<li>Expose a WebSocket gateway protocol for clients (UI, mobile apps)</li>
+<li>Run AI agents that connect providers to channels</li>
+<li>Manage agent sessions, configuration, secrets, and tool registration</li>
+</ul>
+<p><strong>NOT core responsibilities (stays in extensions):</strong></p>
+<ul>
+<li>Channel-specific auth flows (Telegram login, Discord OAuth, etc.)</li>
+<li>Provider-specific API key management</li>
+<li>Provider model catalog/fallback strategies</li>
+<li>Onboarding flows per channel/provider</li>
+</ul>
+<hr>
+<h2>2. Architecture Principles</h2>
+<h3>2.1 Extension-Agnostic Core</h3>
+<p>Core must stay extension-agnostic. <strong>No core special cases</strong> for bundled plugin/provider/channel IDs when manifest/registry/capability contracts can express it.</p>
+<blockquote>
+<p>&quot;Extensions cross into core only via <code>openclaw/plugin-sdk/*</code>, manifest metadata, injected runtime helpers, and documented local barrels (<code>api.ts</code>, <code>runtime-api.ts</code>).&quot;</p>
+</blockquote>
+<h3>2.2 Strict Boundary Enforcement</h3>
+<pre><code>Extension production code MUST NOT:
+  - Import core `src/**`, `src/plugin-sdk-internal/**`
+  - Import another extension&#39;s `src/**`
+  - Use relative paths outside its package root
+
+Core code/tests MUST NOT:
+  - Deep-import plugin internals (`extensions/*/src/**`, `onboard.js`)
+  - Use plugin `api.ts` / public SDK facade / generic contract
+</code></pre>
+<h3>2.3 Manifest-First Control Plane</h3>
+<p>Plugin discovery, config validation, activation planning, and setup work from <strong>metadata before plugin runtime executes</strong>. This keeps startup fast and allows early validation without loading plugin code.</p>
+<h3>2.4 Lazy Loading Everywhere</h3>
+<ul>
+<li>Channel plugins use separate lazy module references for plugin/secrets/runtime/accountInspect</li>
+<li>Provider plugins defer heavy surfaces behind async imports</li>
+<li>JITI caching for <code>.ts</code> file loading in dev, <code>.js</code> fast path for <code>dist/</code></li>
+<li><code>*.runtime.ts</code> lazy boundaries for expensive modules</li>
+</ul>
+<h3>2.5 Separation of Concerns</h3>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Owned by</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Auth/catalog/onboarding</td>
+<td>Plugin-owned</td>
+</tr>
+<tr>
+<td>Transport/replay/tool compat families</td>
+<td>Shared helpers</td>
+</tr>
+<tr>
+<td>Registry/runtime code</td>
+<td>Core</td>
+</tr>
+<tr>
+<td>Channel internals</td>
+<td>Not exposed to plugin authors</td>
+</tr>
+</tbody></table>
+<h3>2.6 Versioned Protocol Contracts</h3>
+<p>Gateway protocol uses <code>PROTOCOL_VERSION</code>. Additive changes preferred; incompatible changes require versioning, docs, and client follow-through.</p>
+<h3>2.7 Deterministic Ordering for Prompt Cache</h3>
+<p>Maps/sets/registries/plugin lists/files/network results must be deterministically ordered <strong>before</strong> model/tool payloads. Old transcript bytes must be preserved when possible.</p>
+<hr>
+<h2>3. Directory Structure</h2>
+<pre><code>openclaw/
+├── src/                    # Core TypeScript (~1.3M lines)
+│   ├── index.ts            # Package entry / library exports
+│   ├── entry.ts            # Process entry with respawn handling
+│   ├── cli/                # CLI bootstrapping and command registration
+│   │   └── run-main.ts     # Main CLI orchestration (292 lines)
+│   ├── acp/                # Agent Communication Protocol (session, translator, control-plane)
+│   ├── agents/             # Agent runtime, embedded runner, spawn, auth profiles
+│   ├── channels/           # Channel implementations, adapters, security
+│   ├── config/             # Configuration types, schema, loading, normalization
+│   ├── gateway/            # Gateway server (boot, client, auth, call, sessions)
+│   │   ├── protocol/       # Wire protocol (schema, validators, types)
+│   │   └── server-methods/ # Server RPC method handlers
+│   ├── hooks/              # Internal hook types and runners
+│   ├── infra/              # Environment, networking, errors, secrets, filesystem
+│   ├── plugins/            # Plugin loader, registry, discovery, bundled management
+│   ├── plugin-sdk/         # Public SDK (plugin-entry, provider-entry, channel-entry-contract)
+│   ├── runtime/            # Main entry point orchestration
+│   ├── tasks/              # Task registry, detached task runtime
+│   ├── tui/                # Terminal UI (chat log, markdown, overlays, gateway-chat)
+│   └── wizard/             # Interactive setup wizard (config, plugin config, secrets)
+│
+├── extensions/             # ~130 bundled plugins
+│   ├── openai/             # OpenAI provider + Codex + image/speech/realtime/media
+│   ├── anthropic/          # Anthropic provider + CLI backend
+│   ├── telegram/           # Telegram channel
+│   ├── discord/            # Discord channel
+│   ├── memory-core/        # File-backed memory + search tools
+│   ├── memory-lancedb/     # LanceDB vector memory
+│   ├── browser/            # Default browser automation tool
+│   ├── ... (120+ more)
+│   └── CLAUDE.md           # Extension boundary rules
+│
+├── ui/                     # Web UI (Lit web components)
+│   ├── index.html          # Entry HTML
+│   ├── package.json
+│   └── src/
+│       ├── main.ts         # Bootstrap entry
+│       ├── styles.css
+│       ├── ui/
+│       │   ├── app.ts       # Main &lt;openclaw-app&gt; component (824 lines)
+│       │   ├── app-gateway.ts    # Gateway WebSocket client (610 lines)
+│       │   ├── app-chat.ts       # Chat send/queue logic (567 lines)
+│       │   ├── app-render.ts    # Main render (~2400 lines)
+│       │   ├── gateway.ts       # GatewayBrowserClient WebSocket class (645 lines)
+│       │   ├── navigation.ts   # Tab routing
+│       │   ├── controllers/    # Data loading/management
+│       │   ├── views/           # Lazy-loaded view components
+│       │   └── chat/            # Chat-specific rendering
+│       └── i18n/            # Internationalization (11 locales)
+│
+├── packages/               # Private npm packages
+│   ├── plugin-sdk/         # @openclaw/plugin-sdk — public plugin SDK
+│   ├── memory-host-sdk/    # @openclaw/memory-host-sdk — memory backend SDK
+│   └── plugin-package-contract/  # External plugin package.json validation
+│
+├── apps/                   # Mobile/desktop applications
+│   ├── ios/                # iOS app (Swift 6, SwiftUI)
+│   ├── android/            # Android app (Kotlin, Jetpack Compose)
+│   ├── macos/              # macOS app (Swift 6, SwiftUI)
+│   └── shared/OpenClawKit/ # Shared Swift protocol library
+│
+├── Swabble/                # macOS speech wake-word daemon (Swift 6.2)
+│
+├── packages/               # (see above)
+│
+├── docs/                  # Documentation
+│   ├── guides/             # User guides
+│   ├── reference/          # Technical reference
+│   └── AGENTS.md           # Docs-specific rules
+│
+├── test/                  # Test helpers and fixtures
+│   └── helpers/           # Shared test utilities
+│
+├── scripts/               # Build/dev scripts
+├── vendor/                # Vendored third-party code
+└── patches/               # pnpm patch files
+</code></pre>
+<hr>
+<h2>4. Entry Points &amp; Boot Chain</h2>
+<h3>4.1 Process Entry Chain</h3>
+<pre><code>Node.js process starts
+  → src/index.ts:85        runLegacyCliEntry()   [legacy direct entry]
+  → src/entry.ts:182       runMainOrRootHelp()
+    → import(&quot;./cli/run-main.js&quot;)
+    → src/cli/run-main.ts:150  runCli()
+      → command registration (plugin commands, etc.)
+      → program.parse() via cacaca CLI builder
+</code></pre>
+<h3>4.2 Main CLI Commands</h3>
+<p>From <code>src/cli/run-main.ts:150-292</code>, the CLI supports:</p>
+<ul>
+<li><code>openclaw dev</code> — development mode</li>
+<li><code>openclaw gateway</code> — start gateway server</li>
+<li><code>openclaw tui</code> — terminal UI</li>
+<li><code>openclaw wizard</code> — setup wizard</li>
+<li><code>openclaw plugins</code> — plugin management</li>
+<li><code>openclaw config</code> — config inspection/mutation</li>
+<li><code>openclaw doctor</code> — diagnostics</li>
+<li>And plugin-registered commands via <code>registerCli()</code></li>
+</ul>
+<h3>4.3 Gateway Boot Chain</h3>
+<pre><code>gateway/boot.ts
+  → loads plugin registry
+  → sets up WebSocket server
+  → registers server methods
+  → auth handler setup
+  → client connection handling
+</code></pre>
+<h3>4.4 Plugin Loading Sequence</h3>
+<pre><code>loadPlugins(PluginLoadOptions)
+  → discoverOpenClawPlugins()    [finds plugins via manifest scan]
+  → loadPluginManifestRegistry() [parses manifest files]
+  → createPluginRegistry()      [builds registry with activation state]
+  → buildPluginApi()            [constructs OpenClawPluginApi per plugin]
+  → plugin.register() / plugin.activate()
+</code></pre>
+<p>The activation planner (<code>src/plugins/activation-planner.ts</code>) uses manifest metadata to decide what to activate — <strong>no runtime execution required</strong> for activation decisions.</p>
+<hr>
+<h2>5. Plugin System</h2>
+<p><em>Detailed in: <a href="./02-plugin-system.md">02-plugin-system.md</a></em></p>
+<p><strong>Key concept:</strong> OpenClaw has a <strong>manifest-first</strong> plugin system where <code>openclaw.plugin.json</code> metadata is read before any plugin code executes. This enables config validation, activation planning, and setup without loading plugin runtime.</p>
+<p><strong>Plugin API (<code>OpenClawPluginApi</code>):</strong></p>
+<ul>
+<li><code>registerTool()</code>, <code>registerHook()</code>, <code>registerHttpRoute()</code>, <code>registerChannel()</code></li>
+<li><code>registerGatewayMethod()</code>, <code>registerCli()</code>, <code>registerService()</code></li>
+<li><code>registerProvider()</code>, <code>registerSpeechProvider()</code>, <code>registerRealtimeTranscriptionProvider()</code></li>
+<li><code>registerRealtimeVoiceProvider()</code>, <code>registerMemoryCapability()</code>, <code>registerAgentHarness()</code></li>
+<li>...40+ methods total</li>
+</ul>
+<p><strong>Plugin shapes:</strong></p>
+<ul>
+<li><strong>plain-capability</strong> — single capability type (e.g., <code>mistral</code> provider-only)</li>
+<li><strong>hybrid-capability</strong> — multiple capability types (e.g., <code>openai</code> has text inference + speech + media + image generation)</li>
+<li><strong>hook-only</strong> — registers only hooks, no capabilities</li>
+<li><strong>non-capability</strong> — registers tools/commands/services but no capabilities</li>
+</ul>
+<p><strong>SDK boundary:</strong> Extensions MUST use <code>openclaw/plugin-sdk/*</code> only. They cannot import <code>src/**</code> or another extension&#39;s <code>src/**</code>.</p>
+<hr>
+<h2>6. Channel System</h2>
+<p><em>Detailed in: <a href="./03-channel-system.md">03-channel-system.md</a></em></p>
+<p>Channels are messaging platform integrations (Telegram, Discord, Slack, etc.). Each channel plugin implements the <code>ChannelPlugin</code> interface with optional capability adapters:</p>
+<ul>
+<li><strong>messaging</strong> — send/receive messages</li>
+<li><strong>streaming</strong> — stream responses</li>
+<li><strong>outbound</strong> — push notifications</li>
+<li><strong>security</strong> — authentication/authorization</li>
+<li><strong>approvalCapability</strong> — approval request handling</li>
+<li><strong>setup</strong> — channel configuration</li>
+<li><strong>pairing</strong> — device pairing</li>
+<li><strong>threading</strong> — thread/topic handling</li>
+<li><strong>groups</strong> — group chat support</li>
+<li><strong>status</strong> — health/status reporting</li>
+<li><strong>secrets</strong> — credential storage</li>
+<li><strong>gatewayMethods</strong> — gateway RPC methods</li>
+</ul>
+<p><strong>Channel entry contract:</strong> <code>defineBundledChannelEntry()</code> in <code>openclaw/plugin-sdk/channel-entry-contract.ts:522</code> provides lazy-loading wiring with four separate module references (plugin, secrets, runtime, accountInspect).</p>
+<hr>
+<h2>7. Provider System</h2>
+<p><em>Detailed in: <a href="./04-provider-system.md">04-provider-system.md</a></em></p>
+<p>Providers are AI model integrations (OpenAI, Anthropic, Google, etc.). The provider system handles:</p>
+<ul>
+<li>Model resolution and selection</li>
+<li>Auth method management (API keys, OAuth, etc.)</li>
+<li>Replay policy and stream wrapping</li>
+<li>Tool schema compatibility</li>
+<li>Catalog building and model metadata</li>
+</ul>
+<p><strong>Provider plugin interface:</strong> Uses <code>definePluginEntry()</code> or <code>defineSingleProviderPluginEntry()</code>. Can register:</p>
+<ul>
+<li>Text inference (<code>registerProvider</code>)</li>
+<li>CLI backend (<code>registerCliBackend</code>)</li>
+<li>Speech (<code>registerSpeechProvider</code>)</li>
+<li>Realtime transcription (<code>registerRealtimeTranscriptionProvider</code>)</li>
+<li>Realtime voice (<code>registerRealtimeVoiceProvider</code>)</li>
+<li>Media understanding (<code>registerMediaUnderstandingProvider</code>)</li>
+<li>Image generation (<code>registerImageGenerationProvider</code>)</li>
+<li>Music generation (<code>registerMusicGenerationProvider</code>)</li>
+<li>Video generation (<code>registerVideoGenerationProvider</code>)</li>
+<li>Web fetch (<code>registerWebFetchProvider</code>)</li>
+<li>Web search (<code>registerWebSearchProvider</code>)</li>
+<li>Memory embedding (<code>registerMemoryEmbeddingProvider</code>)</li>
+</ul>
+<hr>
+<h2>8. Gateway Protocol</h2>
+<p><em>Detailed in: <a href="./05-gateway-protocol.md">05-gateway-protocol.md</a></em></p>
+<p>The gateway is a WebSocket-based client/server protocol (version 3) that exposes OpenClaw&#39;s capabilities to frontends.</p>
+<p><strong>Protocol:</strong> JSON frames over WebSocket:</p>
+<pre><code>{ type: &quot;req&quot;, id, method, params }   // request
+{ type: &quot;res&quot;, id, ok, payload/error } // response
+{ type: &quot;event&quot;, event, payload, seq } // server-&gt;client event
+</code></pre>
+<p><strong>Auth modes:</strong></p>
+<ul>
+<li>Device identity (Ed25519 key pair stored in localStorage)</li>
+<li>Gateway token (explicit)</li>
+<li>Password (for <code>gateway.auth.password</code> mode)</li>
+</ul>
+<p><strong>Key server methods:</strong></p>
+<ul>
+<li><code>gateway.connect</code> — establish connection with auth</li>
+<li><code>chat.send</code> — send message</li>
+<li><code>sessions.list</code> / <code>sessions.create</code> / <code>sessions.get</code></li>
+<li><code>config.patch</code> — update config</li>
+<li><code>cron.jobs.list</code> / <code>cron.jobs.create</code></li>
+<li><code>agents.create</code> — spawn agent</li>
+</ul>
+<p><strong>Client libraries:</strong></p>
+<ul>
+<li><code>GatewayBrowserClient</code> in <code>ui/src/ui/gateway.ts</code> (645 lines)</li>
+<li><code>GatewayChannel</code> in <code>apps/shared/OpenClawKit/</code> (Swift)</li>
+<li><code>GatewaySession</code> in <code>apps/android/</code> (Kotlin)</li>
+</ul>
+<hr>
+<h2>9. Agent System</h2>
+<p><em>Detailed in: <a href="./06-agent-system.md">06-agent-system.md</a></em></p>
+<p>The agent runtime (<code>src/agents/</code>) handles:</p>
+<ul>
+<li><strong>Embedded runner</strong> (<code>pi-embedded-runner/</code>) — runs agents in-process</li>
+<li><strong>Spawn management</strong> (<code>acp-spawn.ts</code>) — ACP subagent spawning</li>
+<li><strong>Auth profiles</strong> (<code>auth-profiles.ts</code>) — per-agent auth configuration</li>
+<li><strong>Transport streams</strong> (<code>anthropic-transport-stream.ts</code>, <code>anthropic-vertex-stream.ts</code>) — provider connectivity</li>
+<li><strong>Tool registration</strong> (<code>tools/</code>) — tool schema and execution</li>
+<li><strong>Model catalog</strong> (<code>model-catalog.types.ts</code>) — model metadata</li>
+</ul>
+<p><strong>Agent runtime config</strong> (<code>agent-runtime-config.ts</code>): manages model selection, provider config, API key rotation (<code>api-key-rotation.ts</code>).</p>
+<hr>
+<h2>10. ACP (Agent Communication Protocol)</h2>
+<p><em>Detailed in: <a href="./07-acp.md">07-acp.md</a></em></p>
+<p>ACP is the inter-agent communication protocol (<code>src/acp/</code>):</p>
+<ul>
+<li><strong>Session management</strong> (<code>session.ts</code>) — <code>AcpSessionStore</code> with 5000 max sessions, 24hr idle TTL</li>
+<li><strong>Session actor queue</strong> — per-session message queue</li>
+<li><strong>Translator</strong> — message translation between agents</li>
+<li><strong>Control-plane</strong> — ACP control plane logic</li>
+<li><strong>Runtime adapters</strong> — adapter between ACP and actual agent runtimes</li>
+</ul>
+<p><strong>Session store interface:</strong></p>
+<pre><code class="language-typescript">export type AcpSessionStore = {
+  createSession, hasSession, getSession, getSessionByRunId
+  setActiveRun, clearActiveRun, cancelActiveRun
+}
+</code></pre>
+<hr>
+<h2>11. Configuration System</h2>
+<p><em>Detailed in: <a href="./08-config-system.md">08-config-system.md</a></em></p>
+<p>The config system (<code>src/config/</code>) handles:</p>
+<ul>
+<li><strong>Types</strong> — config type definitions</li>
+<li><strong>Schema</strong> — Zod-like validation schema with <code>safeParse</code>, <code>validate</code>, <code>uiHints</code>, <code>jsonSchema</code></li>
+<li><strong>Loading</strong> — config file loading from <code>~/.openclaw/</code></li>
+<li><strong>Normalization</strong> — config value normalization and defaults</li>
+</ul>
+<p><strong>Manifest config schema</strong> (<code>src/plugins/manifest-types.ts</code>): <code>OpenClawPluginConfigSchema</code> with per-field UI hints, advanced markers, secret input paths.</p>
+<hr>
+<h2>12. Memory System</h2>
+<p><em>Detailed in: <a href="./09-memory-system.md">09-memory-system.md</a></em></p>
+<p>Memory plugins (<code>extensions/memory-*</code>) provide persistent memory/embedding infrastructure:</p>
+<ul>
+<li><code>memory-core</code> — file-backed memory with search tools (<code>memory_search</code>, <code>memory_get</code>)</li>
+<li><code>memory-lancedb</code> — LanceDB vector storage backend</li>
+<li><code>memory-wiki</code> — wiki-style memory with search</li>
+</ul>
+<p><strong>Memory host SDK</strong> (<code>packages/memory-host-sdk/</code>): exposes engine interfaces for:</p>
+<ul>
+<li><code>engine-foundation.ts</code> — base memory engine</li>
+<li><code>engine-embeddings.ts</code> — embedding computation</li>
+<li><code>engine-storage.ts</code> — persistent storage</li>
+<li><code>engine-qmd.ts</code> — query metadata</li>
+<li><code>host/batch-runner.ts</code> — batch processing</li>
+<li><code>host/embeddings-remote-client.ts</code> — remote embedding services</li>
+</ul>
+<hr>
+<h2>13. Frontend Architecture (UI)</h2>
+<p><em>Detailed in: <a href="./10-ui-frontend.md">10-ui-frontend.md</a></em></p>
+<p><strong>Framework:</strong> Lit 3.3.2 (Web Components with tagged template literals), NOT React.</p>
+<p><strong>Main component:</strong> <code>&lt;openclaw-app&gt;</code> in <code>ui/src/ui/app.ts:132</code> (824 lines)</p>
+<p><strong>State management:</strong> Lit&#39;s <code>@state()</code> decorators, centralized in <code>OpenClawApp</code></p>
+<p><strong>Routing:</strong> Hash/path-based tab routing via <code>navigation.ts</code>, synced with <code>popstate</code>. Tabs grouped: chat, control, agent, settings.</p>
+<p><strong>Gateway connection:</strong> <code>GatewayBrowserClient</code> in <code>ui/src/ui/gateway.ts:289</code> — WebSocket client with device identity auth, reconnect with backoff.</p>
+<p><strong>Views:</strong> Lazy-loaded via <code>createLazy()</code> in <code>app-render.ts:159-174</code>.</p>
+<p><strong>i18n:</strong> 11 locales in <code>ui/src/i18n/locales/</code>, generated from <code>en.ts</code>.</p>
+<hr>
+<h2>14. Terminal UI (TUI)</h2>
+<p><em>Detailed in: <a href="./11-tui.md">11-tui.md</a></em></p>
+<p>The TUI lives in <code>src/tui/</code> (NOT in <code>ui/</code>), using <code>@mariozechner/pi-tui</code>.</p>
+<p><strong>Main entry:</strong> <code>src/tui/tui.ts:1</code></p>
+<p><strong>Key components:</strong></p>
+<ul>
+<li><code>gateway-chat.ts</code> — Gateway client for TUI (WebSocket, similar to UI)</li>
+<li><code>tui-command-handlers.ts</code> — Slash command handlers (<code>/new</code>, <code>/reset</code>, <code>/model</code>, etc.)</li>
+<li><code>components/chat-log.ts</code> — Chat log rendering</li>
+<li><code>components/markdown-message.ts</code> — Markdown rendering in terminal</li>
+<li><code>components/custom-editor.ts</code> — Custom input editor</li>
+<li><code>theme/theme.ts</code> — Terminal ANSI color theme</li>
+</ul>
+<p><strong>CLI entry:</strong> <code>src/cli/tui-cli.ts</code></p>
+<hr>
+<h2>15. Mobile Apps</h2>
+<p><em>Detailed in: <a href="./12-mobile-apps.md">12-mobile-apps.md</a></em></p>
+<table>
+<thead>
+<tr>
+<th>Platform</th>
+<th>Location</th>
+<th>Framework</th>
+<th>Build</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>iOS</td>
+<td><code>apps/ios/</code></td>
+<td>Swift 6 / SwiftUI</td>
+<td>Xcode (project.yml)</td>
+</tr>
+<tr>
+<td>watchOS</td>
+<td><code>apps/ios/WatchApp</code>, <code>WatchExtension</code></td>
+<td>Swift 6</td>
+<td>Xcode</td>
+</tr>
+<tr>
+<td>Android</td>
+<td><code>apps/android/</code></td>
+<td>Kotlin / Jetpack Compose</td>
+<td>Gradle</td>
+</tr>
+<tr>
+<td>macOS</td>
+<td><code>apps/macos/</code></td>
+<td>Swift 6 / SwiftUI</td>
+<td>SPM</td>
+</tr>
+<tr>
+<td>Swabble</td>
+<td><code>Swabble/</code></td>
+<td>Swift 6.2</td>
+<td>SPM</td>
+</tr>
+</tbody></table>
+<p><strong>Shared protocol library:</strong> <code>apps/shared/OpenClawKit/</code> — Swift library with:</p>
+<ul>
+<li><code>OpenClawProtocol/GatewayModels.swift</code> — cross-platform types</li>
+<li><code>OpenClawKit/GatewayChannel.swift</code> — WebSocket gateway protocol</li>
+<li><code>OpenClawChatUI/</code> — shared chat UI components</li>
+</ul>
+<p><strong>Gateway protocol version:</strong> <code>GATEWAY_PROTOCOL_VERSION = 3</code></p>
+<hr>
+<h2>16. Bundled Plugins (extensions/)</h2>
+<p><em>Detailed in: <a href="./13-bundled-plugins.md">13-bundled-plugins.md</a></em></p>
+<p>~130 bundled plugins across categories:</p>
+<p><strong>Provider plugins (30+):</strong> openai, anthropic, anthropic-vertex, google, amazon-bedrock, mistral, groq, openrouter, together, perplexity, cohere, deepseek, moonshot, minimax, kimi-coding, xai, volcengine, qianfan, voyage, ollama, fireworks, sglang, vllm, cloudflare-ai-gateway, vercel-ai-gateway, litellm, acpx, and more.</p>
+<p><strong>Channel plugins (20+):</strong> telegram, discord, slack, msteams, mattermost, matrix, irc, feishu, nextcloud-talk, googlechat, signal, twitch, line, qqbot, zalo, whatsapp, bluebubbles, imessage, synology-chat, nostr, and more.</p>
+<p><strong>Tool/Capability plugins:</strong> browser, acpx, memory-core, memory-lancedb, memory-wiki, image-generation-core, video-generation-core, speech-core, llm-task, device-pair, webhooks, diffs, codex, github-copilot, brave, duckduckgo, exa, tavily, searxng, firecrawl, elevenlabs, deepgram, fal, runway, and more.</p>
+<hr>
+<h2>17. ACP Deep Dive</h2>
+<p><em>Detailed in: <a href="./17-acp-deep-dive.md">17-acp-deep-dive.md</a></em></p>
+<p>ACP bridges OpenClaw&#39;s internal agent runtime with <strong>external harness clients</strong> — IDE plugins (VS Code/IDX), CLI tools (Codex CLI), and other external agents. It translates the ACP protocol (from <code>@agentclientprotocol/sdk</code>) to OpenClaw&#39;s Gateway WebSocket protocol and back.</p>
+<p><strong>Key files:</strong></p>
+<ul>
+<li><code>src/acp/translator.ts</code> — 1,419-line central bridge (AcpGatewayAgent)</li>
+<li><code>src/acp/control-plane/manager.core.ts</code> — 2,221-line orchestrator (AcpSessionManager)</li>
+<li><code>src/acp/session.ts</code> — 191-line session store (in-memory, 5000 max, 24hr TTL)</li>
+</ul>
+<p><strong>Core concepts:</strong> Session actor queue (per-session serialization), runtime cache with idle eviction, turn timeout with 1s grace period, pending prompt tracking, disconnect handling with 5s arm timer.</p>
+<hr>
+<h2>18. Infrastructure, Hooks &amp; Tasks</h2>
+<p><em>Detailed in: <a href="./18-infra-hooks-tasks.md">18-infra-hooks-tasks.md</a></em></p>
+<p><strong>Infrastructure (<code>src/infra/</code>):</strong></p>
+<ul>
+<li>Error handling with nested <code>.cause</code> chain extraction</li>
+<li>Retry logic with cryptographic jitter (<code>generateSecureFraction()</code>)</li>
+<li>Deduplication cache (TTL-based, global singleton)</li>
+<li>Heartbeat runner (1,500+ lines) — periodic agent heartbeat scheduler</li>
+<li>Agent events (global event bus) + system events (ephemeral in-memory queue)</li>
+<li>Safe file operations: <code>O_NOFOLLOW</code>, <code>0o600</code> permissions, atomic writes</li>
+</ul>
+<p><strong>Hooks (<code>src/hooks/</code>):</strong> 30 hook event types, global singleton runner, bundled hooks (session-memory saves context on <code>/new</code> or <code>/reset</code>), hook installation from npm/archive/path.</p>
+<p><strong>Tasks (<code>src/tasks/</code>):</strong> SQLite persistence at <code>~/.openclaw/tasks.db</code>, 5000-session in-memory store, 24hr TTL, task flows with CAS revision control, delivery/notification policies.</p>
+<hr>
+<h2>19. Vendor Code &amp; Python Skills</h2>
+<p><em>Detailed in: <a href="./19-vendor-skills-python.md">19-vendor-skills-python.md</a></em></p>
+<p><strong>Google A2UI (<code>vendor/a2ui/</code>):</strong> Agent-to-User Interface — open-source (Apache 2.0) protocol for agents to generate rich declarative UIs via JSON specification. Versions v0.8 and v0.9. OpenClaw vendors Lit web components renderer and Angular renderer for canvas/control UI.</p>
+<p><strong>Python Skills (<code>skills/</code>):</strong> 50+ Python-based skill packages (productivity, communication, media, dev, AI, IoT, utilities). Each skill contains <code>SKILL.md</code>, Python scripts, and pytest tests. Linted via ruff and tested via pytest.</p>
+<p><strong>Baileys Patch:</strong> <code>patches/@whiskeysockets__baileys@7.0.0-rc.9.patch</code> fixes file write race condition and dispatcher type guard for undici compatibility.</p>
+<hr>
+<h2>20. Plugin Loader Deep Dive</h2>
+<p><em>Detailed in: <a href="./20-plugin-loader-deep-dive.md">20-plugin-loader-deep-dive.md</a></em></p>
+<p>Full 12-stage loading sequence from <code>src/plugins/loader.ts</code> (line 1397+):</p>
+<ol>
+<li>Resolve plugin load cache context</li>
+<li>Check cache for existing registry</li>
+<li>Throw if load already in-flight</li>
+<li>Clear prior plugin state</li>
+<li>Create JITI loader</li>
+<li>Set up LAZY PROXY for runtime</li>
+<li>Create empty registry + API builder</li>
+<li>Discover all plugin candidates</li>
+<li>Parse manifest registry</li>
+<li>Sort by precedence (config &gt; global &gt; bundled &gt; workspace)</li>
+<li>Per-candidate processing (validate, load, register/activate)</li>
+<li>Activate plugin registry</li>
+</ol>
+<p><strong>Key features:</strong> Lazy runtime proxy (accessing any lazy key triggers module load), bundle format detection (codex/claude/cursor), rollback on error clearing commands/handlers/hooks/context engines.</p>
+<hr>
+<h2>21. Channel System Deep Dive</h2>
+<p><em>Detailed in: <a href="./21-channel-deep-dive.md">21-channel-deep-dive.md</a></em></p>
+<p><strong>Scale:</strong> ~250 files in <code>src/channels/</code>, ~29,687 lines of TypeScript, ~180 files in <code>src/channels/plugins/</code>, 12 adapter types composing ChannelPlugin interface.</p>
+<p><strong>12 Adapter Types:</strong> ChannelConfigAdapter, ChannelSecurityAdapter, ChannelOutboundAdapter, ChannelGatewayAdapter, ChannelDirectoryAdapter, ChannelMessagingAdapter, ChannelThreadingAdapter, ChannelMessageActionAdapter, + 5 others (Groups, Mentions, Heartbeat, Status, Secrets, Allowlist, Doctor, Bindings, Resolver, Approval, Pairing).</p>
+<p><strong>Binding System:</strong> Channel-to-channel bridging via <code>ConfiguredBindingRecord</code>. Resolution flow: User on source channel → lookup binding → resolve agent + channel → create ACP session key → deliver to bound channel.</p>
+<p><strong>3-Layer Session Conversation Fallback:</strong> (1) Plugin resolution → (2) Bundled plugin fallback via <code>loadBundledChannelSessionConversationApi()</code> → (3) Generic fallback via <code>buildGenericConversationResolution()</code>.</p>
+<hr>
+<h2>22. Embedded Runner Deep Dive</h2>
+<p><em>Detailed in: <a href="./22-embedded-runner-deep-dive.md">22-embedded-runner-deep-dive.md</a></em></p>
+<p><strong>pi-embedded-runner</strong> (<code>src/agents/pi-embedded-runner/</code>) is the core agent execution engine.</p>
+<p><strong>Two-layer execution model:</strong></p>
+<ul>
+<li><strong>Outer (<code>runEmbeddedPiAgent</code>)</strong>: Retry loop orchestrator managing auth rotation, compaction decisions, and retry policy</li>
+<li><strong>Inner (<code>runEmbeddedAttempt</code>)</strong>: Single-shot per-attempt execution with its own session lifecycle</li>
+</ul>
+<p><strong>12-stage stream wrapper chain</strong> (applied to <code>activeSession.agent.streamFn</code>):</p>
+<ol>
+<li><code>cacheTrace.wrapStreamFn()</code> — Observability</li>
+<li><code>dropThinkingBlocks()</code> — Strip thinking for Anthropic</li>
+<li><code>sanitizeReplayToolCallIds()</code> — Normalize tool call IDs</li>
+<li><code>downgradeOpenAIReasoningBlocks()</code> — OpenAI Responses API compat</li>
+<li><code>handleSessionsYieldAbort()</code> — Yield interruption handling</li>
+<li><code>sanitizeMalformedToolCalls()</code> — Fix malformed tool names</li>
+<li><code>trimToolCallNames()</code> + <code>unknownToolGuard</code> — Whitespace trimming + hallucination guard</li>
+<li><code>repairMalformedAnthropicToolArgs()</code> — Fix JSON in tool arguments</li>
+<li><code>decodeXaiHtmlEntities()</code> — xAI-specific decoding</li>
+<li><code>anthropicPayloadLogger.wrap()</code> — Debug logging</li>
+<li><code>handleSensitiveStopReason()</code> — Provider-specific recovery</li>
+<li><code>streamWithIdleTimeout()</code> — LLM responsiveness detection</li>
+</ol>
+<p><strong>Key files:</strong></p>
+<ul>
+<li><code>run.ts</code> (~2641 lines) — Main orchestrator with retry loop</li>
+<li><code>run/attempt.ts</code> (~2642 lines) — Single-attempt execution engine</li>
+<li><code>run/backend.ts</code> (9 lines) — Delegates to harness</li>
+<li><code>run/auth-controller.ts</code> (527 lines) — Auth profile lifecycle</li>
+<li><code>compact.ts</code> (~1400 lines) — Session compaction</li>
+<li><code>model.ts</code> (~855 lines) — Model resolution</li>
+</ul>
+<hr>
+<h2>23. Gateway Server Methods</h2>
+<p><em>Detailed in: <a href="./23-gateway-server-methods.md">23-gateway-server-methods.md</a></em></p>
+<p><strong>~110 gateway server methods</strong> organized into 28 functional categories.</p>
+<p><strong>28 functional areas:</strong> Connection, Health, Sessions (<del>18 methods), Chat (4), Agent (7), Config (7), Channels (3), Commands, Cron (7), Devices (6), Nodes (</del>12), Talk, Skills (6), Tools (2), Models (2), Usage (4), Exec Approvals (7), Plugin Approvals (4), System (5), Update, TTS (5), Doctor (7), Push, Secrets, Web, Wizard, Voice Wake</p>
+<p><strong>Helper files:</strong> <code>agent-job.ts</code>, <code>agent-wait-dedupe.ts</code>, <code>attachment-normalize.ts</code>, <code>base-hash.ts</code>, <code>nodes.helpers.ts</code>, and 9 others</p>
+<p><strong>8 key architectural notes:</strong></p>
+<ul>
+<li><code>parentId</code> chain rule for transcript references</li>
+<li>Deduplication as first-class concept</li>
+<li>Optimistic locking for config</li>
+<li>Node invoke wake/throttle/queue pattern</li>
+<li>Broadcast-first design</li>
+<li>Session isolation in heartbeat delivery</li>
+<li>Tool permission classification</li>
+<li>ACP binding session key format</li>
+</ul>
+<hr>
+<h2>24. Telegram Extension</h2>
+<p><em>Detailed in: <a href="./24-telegram-extension.md">24-telegram-extension.md</a></em></p>
+<p>The Telegram extension is one of the most sophisticated channel plugins, with both <strong>polling</strong> and <strong>webhook</strong> modes.</p>
+<p><strong>grammY Integration:</strong></p>
+<ul>
+<li><code>TelegramPollingSession</code> with persistent <code>update_id</code> offset tracking</li>
+<li>Stall detection (120s default) with automatic restart</li>
+<li>IPv4/IPv6 transport fallback, exponential backoff retry</li>
+</ul>
+<p><strong>Message Processing Pipeline (5 stages):</strong></p>
+<ol>
+<li>Inbound debouncing (text fragments coalescing, media group handling)</li>
+<li>Message context building (access control, route resolution, body normalization)</li>
+<li>Body normalization (sticker vision, audio transcription, mention detection)</li>
+<li>Context payload building (envelope formatting, group history, session recording)</li>
+<li>Dispatch to agent (abort fence, streaming lanes, reasoning/answer splitting)</li>
+</ol>
+<p><strong>Key capabilities:</strong> Streaming preview via <code>createTelegramDraftStream()</code>, inline keyboard handling, media send with dimension validation, forum topic support with auto-labeling, reaction notifications, status reactions (lifecycle indicators).</p>
+<p><strong>Deduplication:</strong> Persistent offset store, 5-minute TTL dedupe cache, media group buffering (500ms flush).</p>
+<hr>
+<h2>25. Packages</h2>
+<p><em>Detailed in: <a href="./14-packages.md">14-packages.md</a></em></p>
+<p>Three private npm packages:</p>
+<p><strong><code>@openclaw/plugin-sdk</code></strong> (<code>packages/plugin-sdk/</code>): The public SDK for building plugins. 40+ export paths covering plugin-entry, provider-entry, channel-entry-contract, runtime interfaces, tool schemas, HTTP client, etc.</p>
+<p><strong><code>@openclaw/memory-host-sdk</code></strong> (<code>packages/memory-host-sdk/</code>): SDK for memory/embeddings backend. Exposes runtime interfaces, engine interfaces, batch processing, remote embeddings.</p>
+<p><strong><code>@openclaw/plugin-package-contract</code></strong> (<code>packages/plugin-package-contract/</code>): Validates external plugin <code>package.json</code> structure.</p>
+<hr>
+<h2>26. CLI &amp; Daemon</h2>
+<p><em>Detailed in: <a href="./15-cli-daemon.md">15-cli-daemon.md</a></em></p>
+<p>The CLI (<code>src/cli/</code>) handles:</p>
+<ul>
+<li>Command registration and program building</li>
+<li>Daemon lifecycle management</li>
+<li>Config resolution</li>
+<li>Plugin command registration (via <code>registerCli()</code>)</li>
+</ul>
+<p><strong>Daemon mode:</strong> <code>openclaw gateway</code> runs the gateway as a long-lived daemon process.</p>
+<p><strong>Key files:</strong></p>
+<ul>
+<li><code>run-main.ts</code> (292 lines) — main CLI orchestration</li>
+<li><code>progress.ts</code> — CLI progress display</li>
+<li><code>tui-cli.ts</code> — TUI launch entry</li>
+</ul>
+<hr>
+<h2>27. Testing Strategy</h2>
+<p><em>Detailed in: <a href="./16-testing-strategy.md">16-testing.md</a></em></p>
+<p><strong>Framework:</strong> Vitest</p>
+<p><strong>Layout:</strong></p>
+<ul>
+<li>Tests colocated <code>*.test.ts</code> next to source</li>
+<li>e2e tests <code>*.e2e.test.ts</code></li>
+<li>Test helpers in <code>test/helpers/</code></li>
+</ul>
+<p><strong>Key patterns:</strong></p>
+<ul>
+<li>Per-test <code>vi.resetModules()</code> avoided in hot tests — prefer static or <code>beforeAll</code> imports</li>
+<li>Mock expensive runtime seams directly (scanners, manifests, package registries, filesystem, provider SDKs)</li>
+<li>Prefer injected deps over module mocks</li>
+<li>Shard timing artifact at <code>.artifacts/vitest-shard-timings.json</code></li>
+<li><code>OPENCLAW_LIVE_TEST=1 pnpm test:live</code> for live testing</li>
+<li><code>pnpm test:perf:imports &lt;file&gt;</code> for import performance profiling</li>
+</ul>
+<p><strong>Commands:</strong></p>
+<ul>
+<li><code>pnpm test</code> — full test suite</li>
+<li><code>pnpm test:changed</code> — changed tests only</li>
+<li><code>pnpm test:extensions</code> — extension test shards</li>
+<li><code>pnpm test:coverage</code> — coverage report</li>
+</ul>
+<hr>
+<h2>28. Key Files Reference</h2>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Lines</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>src/plugins/loader.ts</code></td>
+<td>12-stage</td>
+<td>Plugin loading orchestration</td>
+</tr>
+<tr>
+<td><code>src/agents/pi-embedded-runner/run/backend.ts</code></td>
+<td>2,640</td>
+<td>Single-attempt agent execution engine</td>
+</tr>
+<tr>
+<td><code>src/gateway/server-methods/</code></td>
+<td>40 files</td>
+<td>Gateway WebSocket handler methods</td>
+</tr>
+<tr>
+<td><code>src/acp/translator.ts</code></td>
+<td>1,419</td>
+<td>ACP-to-Gateway bridge (AcpGatewayAgent)</td>
+</tr>
+<tr>
+<td><code>src/acp/control-plane/manager.core.ts</code></td>
+<td>2,221</td>
+<td>ACP session orchestrator (AcpSessionManager)</td>
+</tr>
+<tr>
+<td><code>src/channels/plugins/types.adapters.ts</code></td>
+<td>855</td>
+<td>All 12 channel adapter interface definitions</td>
+</tr>
+<tr>
+<td><code>src/channels/plugins/setup-wizard.ts</code></td>
+<td>625</td>
+<td>Interactive channel setup wizard</td>
+</tr>
+<tr>
+<td><code>src/infra/heartbeat-runner.ts</code></td>
+<td>1,500+</td>
+<td>Periodic heartbeat scheduler</td>
+</tr>
+<tr>
+<td><code>src/hooks/internal-hooks.ts</code></td>
+<td>~500</td>
+<td>Hook registration and triggering</td>
+</tr>
+<tr>
+<td><code>src/tasks/task-registry.ts</code></td>
+<td>2,000+</td>
+<td>In-memory task store with CRUD</td>
+</tr>
+<tr>
+<td><code>src/plugin-sdk/plugin-entry.ts</code></td>
+<td>208</td>
+<td><code>definePluginEntry()</code> for non-channel plugins</td>
+</tr>
+<tr>
+<td><code>src/plugin-sdk/channel-entry-contract.ts</code></td>
+<td>522</td>
+<td><code>defineBundledChannelEntry()</code> lazy loading</td>
+</tr>
+<tr>
+<td><code>ui/src/ui/app.ts</code></td>
+<td>824</td>
+<td>Main <code>&lt;openclaw-app&gt;</code> Lit component</td>
+</tr>
+<tr>
+<td><code>ui/src/ui/gateway.ts</code></td>
+<td>645</td>
+<td><code>GatewayBrowserClient</code> WebSocket client</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>Document Index</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Document</th>
+<th>Contents</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>01</td>
+<td><code>01-overview.md</code> (this file)</td>
+<td>System overview, principles, directory structure, entry points</td>
+</tr>
+<tr>
+<td>02</td>
+<td><code>02-plugin-system.md</code></td>
+<td>Plugin loader, registry, manifest, activation planning, SDK surface</td>
+</tr>
+<tr>
+<td>03</td>
+<td><code>03-channel-system.md</code></td>
+<td>Channel plugin interface, capability adapters, channel implementations</td>
+</tr>
+<tr>
+<td>04</td>
+<td><code>04-provider-system.md</code></td>
+<td>Provider plugins, auth methods, model catalog, capability registration</td>
+</tr>
+<tr>
+<td>05</td>
+<td><code>05-gateway-protocol.md</code></td>
+<td>WebSocket protocol, server methods, auth modes, client implementations</td>
+</tr>
+<tr>
+<td>06</td>
+<td><code>06-agent-system.md</code></td>
+<td>Agent runtime, embedded runner, spawn, tools, transport streams</td>
+</tr>
+<tr>
+<td>07</td>
+<td><code>07-acp.md</code></td>
+<td>ACP session, translator, control-plane, runtime adapters</td>
+</tr>
+<tr>
+<td>08</td>
+<td><code>08-config-system.md</code></td>
+<td>Config types, schema, loading, normalization</td>
+</tr>
+<tr>
+<td>09</td>
+<td><code>09-memory-system.md</code></td>
+<td>Memory plugins, embedding engines, memory-host-sdk</td>
+</tr>
+<tr>
+<td>10</td>
+<td><code>10-ui-frontend.md</code></td>
+<td>Lit components, routing, gateway client, controllers, views, i18n</td>
+</tr>
+<tr>
+<td>11</td>
+<td><code>11-tui.md</code></td>
+<td>Terminal UI components, gateway-chat, command handlers, theme</td>
+</tr>
+<tr>
+<td>12</td>
+<td><code>12-mobile-apps.md</code></td>
+<td>iOS, Android, macOS, Swabble, OpenClawKit shared library</td>
+</tr>
+<tr>
+<td>13</td>
+<td><code>13-bundled-plugins.md</code></td>
+<td>Complete plugin directory, categories, and entry patterns</td>
+</tr>
+<tr>
+<td>14</td>
+<td><code>14-packages.md</code></td>
+<td>plugin-sdk, memory-host-sdk, plugin-package-contract</td>
+</tr>
+<tr>
+<td>15</td>
+<td><code>15-cli-daemon.md</code></td>
+<td>CLI structure, commands, daemon lifecycle, config resolution</td>
+</tr>
+<tr>
+<td>16</td>
+<td><code>16-testing.md</code></td>
+<td>Testing strategy, patterns, commands, performance profiling</td>
+</tr>
+<tr>
+<td>17</td>
+<td><code>17-acp-deep-dive.md</code></td>
+<td>ACP translator (1419 lines), session store (5000 max), control-plane manager (2221 lines)</td>
+</tr>
+<tr>
+<td>18</td>
+<td><code>18-infra-hooks-tasks.md</code></td>
+<td>Retry, heartbeat-runner (1500+ lines), 30 hook events, SQLite tasks with CAS</td>
+</tr>
+<tr>
+<td>19</td>
+<td><code>19-vendor-skills-python.md</code></td>
+<td>Google A2UI vendoring, Python skills (50+ packages), baileys patches</td>
+</tr>
+<tr>
+<td>20</td>
+<td><code>20-plugin-loader-deep-dive.md</code></td>
+<td>Full 12-stage loading sequence, lazy runtime proxy, bundle format detection</td>
+</tr>
+<tr>
+<td>21</td>
+<td><code>21-channel-deep-dive.md</code></td>
+<td>~250 files, 12 adapter types, channel binding, 3-layer session fallback</td>
+</tr>
+<tr>
+<td>22</td>
+<td><code>22-embedded-runner-deep-dive.md</code></td>
+<td>pi-embedded-runner (2640+ lines), 12-stage stream wrapper, auth rotation, compaction</td>
+</tr>
+<tr>
+<td>23</td>
+<td><code>23-gateway-server-methods.md</code></td>
+<td>~110 gateway methods, 28 functional categories, all handler details</td>
+</tr>
+<tr>
+<td>24</td>
+<td><code>24-telegram-extension.md</code></td>
+<td>Telegram grammY polling/webhook, streaming lanes, dedupe, media/group/forum handling</td>
+</tr>
+<tr>
+<td>25</td>
+<td><code>14-packages.md</code></td>
+<td>plugin-sdk (295 subpaths), memory-host-sdk, plugin-package-contract</td>
+</tr>
+<tr>
+<td>26</td>
+<td><code>15-cli-daemon.md</code></td>
+<td>CLI structure, commands, daemon lifecycle, config resolution</td>
+</tr>
+<tr>
+<td>27</td>
+<td><code>16-testing.md</code></td>
+<td>Testing strategy, patterns, commands, performance profiling</td>
+</tr>
+<tr>
+<td>28</td>
+<td><em>(in this file)</em></td>
+<td>Essential files reference by topic</td>
+</tr>
+</tbody></table>
+
+  </main>
+</body>
+</html>

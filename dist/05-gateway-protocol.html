@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>gateway protocol</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      line-height: 1.6;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px;
+      color: #333;
+    }
+    .sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 250px;
+      height: 100vh;
+      background: #f8f9fa;
+      border-right: 1px solid #ddd;
+      padding: 20px;
+      overflow-y: auto;
+    }
+    .sidebar h3 { margin-top: 0; color: #4f46e5; }
+    .sidebar ul { list-style: none; padding: 0; }
+    .sidebar li { margin: 8px 0; }
+    .sidebar a { color: #333; text-decoration: none; font-size: 14px; }
+    .sidebar a:hover { color: #4f46e5; }
+    .content { margin-left: 270px; padding: 20px; }
+    pre { background: #1f2937; color: #e5e7eb; padding: 15px; border-radius: 8px; overflow-x: auto; }
+    code { background: #e5e7eb; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+    pre code { background: transparent; color: inherit; }
+    blockquote { border-left: 4px solid #4f46e5; background: #f9fafb; padding: 10px 20px; margin: 1em 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+    th { background: #f3f4f6; }
+    h1, h2, h3 { color: #1f2937; }
+    .home-link { font-size: 24px; font-weight: bold; color: #4f46e5; text-decoration: none; }
+    a { color: #4f46e5; }
+    @media (max-width: 768px) {
+      .sidebar { position: static; width: 100%; height: auto; border-right: none; border-bottom: 1px solid #ddd; }
+      .content { margin-left: 0; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="sidebar">
+    <h3><a href="/" class="home-link">OpenClaw</a></h3>
+    <ul>
+  <li><a href="/01-overview">01 - overview</a></li>
+  <li><a href="/02-plugin-system">02 - plugin system</a></li>
+  <li><a href="/03-channel-system">03 - channel system</a></li>
+  <li><a href="/04-provider-system">04 - provider system</a></li>
+  <li><a href="/05-gateway-protocol">05 - gateway protocol</a></li>
+  <li><a href="/06-agent-system">06 - agent system</a></li>
+  <li><a href="/07-acp">07 - acp</a></li>
+  <li><a href="/08-config-system">08 - config system</a></li>
+  <li><a href="/09-memory-system">09 - memory system</a></li>
+  <li><a href="/10-ui-frontend">10 - ui frontend</a></li>
+  <li><a href="/11-tui">11 - tui</a></li>
+  <li><a href="/12-mobile-apps">12 - mobile apps</a></li>
+  <li><a href="/13-bundled-plugins">13 - bundled plugins</a></li>
+  <li><a href="/14-packages">14 - packages</a></li>
+  <li><a href="/15-cli-daemon">15 - cli daemon</a></li>
+  <li><a href="/16-testing">16 - testing</a></li>
+  <li><a href="/17-acp-deep-dive">17 - acp deep dive</a></li>
+  <li><a href="/18-infra-hooks-tasks">18 - infra hooks tasks</a></li>
+  <li><a href="/19-vendor-skills-python">19 - vendor skills python</a></li>
+  <li><a href="/20-plugin-loader-deep-dive">20 - plugin loader deep dive</a></li>
+  <li><a href="/21-channel-deep-dive">21 - channel deep dive</a></li>
+  <li><a href="/22-embedded-runner-deep-dive">22 - embedded runner deep dive</a></li>
+  <li><a href="/23-gateway-server-methods">23 - gateway server methods</a></li>
+  <li><a href="/24-telegram-extension">24 - telegram extension</a></li>
+    </ul>
+  </nav>
+  <main class="content">
+    <h1>Gateway Protocol Architecture</h1>
+<blockquote>
+<p><em>Part of the OpenClaw Architecture Analysis — see <a href="./01-overview.md">01-overview.md</a></em></p>
+</blockquote>
+<hr>
+<h2>1. Overview</h2>
+<p>The gateway is the <strong>client/server communication layer</strong> that exposes OpenClaw&#39;s capabilities to frontends (web UI, mobile apps, terminal UI). It is a WebSocket-based protocol (version 3) that handles authentication, session management, and RPC-style method calls between clients and the core daemon.</p>
+<pre><code>Client (UI / Mobile / TUI)
+    │ WebSocket (TLS)
+    ▼
+┌─────────────────────────────────────┐
+│         OpenClaw Gateway            │
+│  ┌─────────────────────────────┐   │
+│  │   Auth Handler               │   │
+│  │   Session Manager            │   │
+│  │   Server Methods Registry    │   │
+│  └─────────────────────────────┘   │
+│           │         │              │
+│    Plugin Registry  Agent Runtime   │
+└─────────────────────────────────────┘
+</code></pre>
+<hr>
+<h2>2. Protocol Design</h2>
+<h3>2.1 Wire Format</h3>
+<p>All communication is JSON frames over a WebSocket connection:</p>
+<pre><code class="language-typescript">// Request (client → server)
+{ type: &quot;req&quot;, id: string, method: string, params?: unknown }
+
+// Response (server → client)
+{ type: &quot;res&quot;, id: string, ok: boolean, payload?: unknown, error?: string }
+
+// Server event (server → client)
+{ type: &quot;event&quot;, event: string, payload?: unknown, seq: number }
+</code></pre>
+<h3>2.2 Protocol Version</h3>
+<pre><code class="language-typescript">const GATEWAY_PROTOCOL_VERSION = 3
+</code></pre>
+<p>The version is checked during connection handshake to ensure client/server compatibility.</p>
+<h3>2.3 Connection Flow</h3>
+<pre><code>1. Client opens WebSocket connection
+2. Server sends { type: &quot;event&quot;, event: &quot;connect.challenge&quot;, payload: challengeData }
+3. Client responds with { type: &quot;req&quot;, method: &quot;gateway.connect&quot;, params: authParams }
+4. Server sends { type: &quot;res&quot;, ok: true, payload: helloData }
+   helloData includes: session defaults, presence, health, capabilities
+5. Bidirectional communication via req/res and event frames
+</code></pre>
+<hr>
+<h2>3. Authentication</h2>
+<h3>3.1 Auth Modes</h3>
+<p>From <code>ui/src/ui/gateway.ts:95-110</code>, three auth modes are supported:</p>
+<p><strong>Device Identity (Ed25519)</strong></p>
+<pre><code class="language-typescript">// Key pair stored in localStorage
+const deviceIdentity = loadOrCreateDeviceIdentity()
+// Challenge signed with private key
+</code></pre>
+<p><strong>Gateway Token</strong></p>
+<pre><code class="language-typescript">// Explicit token provided by user
+{ token: &quot;gw_xxxx&quot; }
+</code></pre>
+<p><strong>Password</strong></p>
+<pre><code class="language-typescript">// For gateway.auth.password mode
+{ password: &quot;user-password&quot; }
+</code></pre>
+<h3>3.2 Auth Parameters</h3>
+<pre><code class="language-typescript">interface GatewayConnectParams {
+  role: &quot;device&quot; | &quot;operator&quot; | &quot;node&quot;
+  scopes?: string[]
+  caps?: Capability[]
+  commands?: string[]
+  permissions?: string[]
+  deviceToken?: string        // Device identity token
+  sharedToken?: string        // Shared secret token
+  bootstrapToken?: string     // Bootstrap token
+  password?: string           // Password auth
+  challengeResponse?: string   // Ed25519 challenge response
+}
+</code></pre>
+<hr>
+<h2>4. Server Methods</h2>
+<h3>4.1 Method Registration</h3>
+<p>Server methods are registered via <code>registerGatewayMethod()</code> on the plugin API and handled through <code>src/gateway/server-methods/</code>:</p>
+<pre><code class="language-typescript">// Registration
+api.registerGatewayMethod(&quot;chat.send&quot;, chatSendHandler)
+
+// Handler signature
+type GatewayRequestHandler = (
+  handler: GatewayRequestHandlerOptions
+) =&gt; Promise&lt;GatewayResponse&gt; | GatewayResponse
+</code></pre>
+<h3>4.2 Core Server Methods</h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>gateway.connect</code></td>
+<td>Establish connection with auth</td>
+</tr>
+<tr>
+<td><code>chat.send</code></td>
+<td>Send message to agent</td>
+</tr>
+<tr>
+<td><code>chat.sendSpatial</code></td>
+<td>Send with spatial/multi-modal data</td>
+</tr>
+<tr>
+<td><code>sessions.list</code></td>
+<td>List active sessions</td>
+</tr>
+<tr>
+<td><code>sessions.create</code></td>
+<td>Create new session</td>
+</tr>
+<tr>
+<td><code>sessions.get</code></td>
+<td>Get session state</td>
+</tr>
+<tr>
+<td><code>sessions.patch</code></td>
+<td>Update session</td>
+</tr>
+<tr>
+<td><code>config.get</code></td>
+<td>Get configuration</td>
+</tr>
+<tr>
+<td><code>config.patch</code></td>
+<td>Update configuration</td>
+</tr>
+<tr>
+<td><code>config.set</code></td>
+<td>Set configuration value</td>
+</tr>
+<tr>
+<td><code>cron.jobs.list</code></td>
+<td>List cron jobs</td>
+</tr>
+<tr>
+<td><code>cron.jobs.create</code></td>
+<td>Create cron job</td>
+</tr>
+<tr>
+<td><code>cron.jobs.delete</code></td>
+<td>Delete cron job</td>
+</tr>
+<tr>
+<td><code>agents.create</code></td>
+<td>Spawn new agent</td>
+</tr>
+<tr>
+<td><code>agents.list</code></td>
+<td>List agents</td>
+</tr>
+<tr>
+<td><code>agents.get</code></td>
+<td>Get agent state</td>
+</tr>
+<tr>
+<td><code>nodes.list</code></td>
+<td>List connected nodes</td>
+</tr>
+<tr>
+<td><code>nodes.invoke</code></td>
+<td>Invoke node capability</td>
+</tr>
+<tr>
+<td><code>channels.list</code></td>
+<td>List configured channels</td>
+</tr>
+<tr>
+<td><code>channels.send</code></td>
+<td>Send via channel</td>
+</tr>
+</tbody></table>
+<h3>4.3 Schema Validation</h3>
+<p>From <code>src/gateway/protocol/index.ts:804</code>, all method params are validated via JSON Schema (using AJV):</p>
+<pre><code class="language-typescript">validateConnectParams
+validateSessionsSendParams
+validateChatSendParams
+validateAgentsCreateParams
+validateConfigSetParams
+// ... extensive validator list
+</code></pre>
+<hr>
+<h2>5. Sessions</h2>
+<h3>5.1 Session Management</h3>
+<p>From <code>src/gateway/sessions.ts</code>:</p>
+<p>Sessions track active conversations. Key operations:</p>
+<ul>
+<li><code>sessions.list</code> — list active sessions with filters</li>
+<li><code>sessions.create</code> — create new session</li>
+<li><code>sessions.get</code> — get session state</li>
+<li><code>sessions.patch</code> — update session metadata</li>
+</ul>
+<h3>5.2 Session Key Derivation</h3>
+<p>Sessions are identified by a derived key that incorporates:</p>
+<ul>
+<li>Agent ID</li>
+<li>Channel ID</li>
+<li>Conversation thread ID</li>
+</ul>
+<h3>5.3 ACP Session Store</h3>
+<p>From <code>src/acp/session.ts:150+</code>:</p>
+<ul>
+<li>Max 5000 sessions</li>
+<li>24hr idle TTL</li>
+<li>Active run tracking</li>
+<li>Abort controller support</li>
+</ul>
+<hr>
+<h2>6. Events (Server → Client)</h2>
+<h3>6.1 Event Types</h3>
+<p>The server pushes events to subscribed clients:</p>
+<pre><code class="language-typescript">// Chat events
+{ event: &quot;chat&quot;, payload: ChatEvent }
+{ event: &quot;chat.side_result&quot;, payload: SideResultEvent }
+{ event: &quot;session.message&quot;, payload: SessionMessageEvent }
+
+// Agent events
+{ event: &quot;agent&quot;, payload: AgentEvent }
+
+// Presence
+{ event: &quot;presence&quot;, payload: PresenceEvent }
+
+// System
+{ event: &quot;shutdown&quot;, payload: ShutdownEvent }
+{ event: &quot;exec.approval.requested&quot;, payload: ExecApprovalEvent }
+</code></pre>
+<h3>6.2 Event Subscription</h3>
+<p>Clients subscribe via <code>onEvent</code> callback:</p>
+<pre><code class="language-typescript">gateway.onEvent((event, payload) =&gt; {
+  switch (event) {
+    case &quot;chat&quot;:
+      handleChatEvent(payload)
+      break
+    case &quot;presence&quot;:
+      handlePresenceEvent(payload)
+      break
+  }
+})
+</code></pre>
+<hr>
+<h2>7. Client Implementations</h2>
+<h3>7.1 Browser Client (TypeScript)</h3>
+<p><strong>File:</strong> <code>ui/src/ui/gateway.ts:289</code> (645 lines)</p>
+<pre><code class="language-typescript">export class GatewayBrowserClient {
+  private ws: WebSocket | null = null
+
+  start() {
+    this.ws = new WebSocket(this.opts.url)
+  }
+
+  request&lt;T&gt;(method: string, params?: unknown): Promise&lt;T&gt; {
+    // JSON frame: { type: &quot;req&quot;, id, method, params }
+  }
+
+  onEvent(handler: (event: string, payload: unknown) =&gt; void) {
+    // Register event handler
+  }
+}
+</code></pre>
+<h3>7.2 iOS Client (Swift)</h3>
+<p><strong>File:</strong> <code>apps/shared/OpenClawKit/OpenClawKit/GatewayChannel.swift</code> (500+ lines)</p>
+<pre><code class="language-swift">protocol WebSocketSessioning {
+  func writeMessage(_ message: GatewayMessage) async throws
+  func readMessage() async throws -&gt; GatewayMessage
+}
+
+class GatewayChannel {
+  func connect(options: GatewayConnectOptions) async throws
+  func send(method: String, params: [String: Any]) async throws -&gt; [String: Any]
+}
+</code></pre>
+<h3>7.3 Android Client (Kotlin)</h3>
+<p><strong>File:</strong> <code>apps/android/app/src/main/java/ai/openclaw/app/gateway/GatewaySession.kt</code> (500+ lines)</p>
+<pre><code class="language-kotlin">class GatewaySession {
+  suspend fun connect(options: GatewayConnectOptions)
+  suspend fun send(method: String, params: Map&lt;String, Any&gt;): Map&lt;String, Any&gt;
+}
+</code></pre>
+<hr>
+<h2>8. Gateway Boot</h2>
+<p>From <code>src/gateway/boot.ts</code>:</p>
+<pre><code class="language-typescript">bootGateway()
+  → Load plugin registry
+  → Set up WebSocket server (TLS)
+  → Register built-in server methods
+  → Register plugin gateway methods
+  → Set up auth handler
+  → Start client connection handler
+  → Begin accepting connections
+</code></pre>
+<hr>
+<h2>9. Key Files</h2>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Lines</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>src/gateway/protocol/index.ts</code></td>
+<td>804</td>
+<td>Protocol validators and schema</td>
+</tr>
+<tr>
+<td><code>src/gateway/server-methods/types.ts</code></td>
+<td>118</td>
+<td>Gateway handler types</td>
+</tr>
+<tr>
+<td><code>src/gateway/server-methods/</code></td>
+<td>~500+</td>
+<td>Individual method handlers</td>
+</tr>
+<tr>
+<td><code>src/gateway/boot.ts</code></td>
+<td>~150</td>
+<td>Gateway startup</td>
+</tr>
+<tr>
+<td><code>src/gateway/client.ts</code></td>
+<td>~200</td>
+<td>Client connection handling</td>
+</tr>
+<tr>
+<td><code>src/gateway/auth.ts</code></td>
+<td>~150</td>
+<td>Auth surface</td>
+</tr>
+<tr>
+<td><code>src/gateway/call.ts</code></td>
+<td>~100</td>
+<td>RPC call handling</td>
+</tr>
+<tr>
+<td><code>src/gateway/sessions.ts</code></td>
+<td>~150</td>
+<td>Session management</td>
+</tr>
+<tr>
+<td><code>src/acp/session.ts</code></td>
+<td>150+</td>
+<td>ACP session store</td>
+</tr>
+<tr>
+<td><code>ui/src/ui/gateway.ts</code></td>
+<td>645</td>
+<td>GatewayBrowserClient</td>
+</tr>
+<tr>
+<td><code>apps/shared/OpenClawKit/OpenClawKit/GatewayChannel.swift</code></td>
+<td>500+</td>
+<td>Swift gateway client</td>
+</tr>
+<tr>
+<td><code>apps/android/app/src/main/java/ai/openclaw/app/gateway/GatewaySession.kt</code></td>
+<td>500+</td>
+<td>Kotlin gateway client</td>
+</tr>
+</tbody></table>
+
+  </main>
+</body>
+</html>

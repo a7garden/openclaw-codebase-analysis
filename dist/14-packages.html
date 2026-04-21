@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>packages</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      line-height: 1.6;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px;
+      color: #333;
+    }
+    .sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 250px;
+      height: 100vh;
+      background: #f8f9fa;
+      border-right: 1px solid #ddd;
+      padding: 20px;
+      overflow-y: auto;
+    }
+    .sidebar h3 { margin-top: 0; color: #4f46e5; }
+    .sidebar ul { list-style: none; padding: 0; }
+    .sidebar li { margin: 8px 0; }
+    .sidebar a { color: #333; text-decoration: none; font-size: 14px; }
+    .sidebar a:hover { color: #4f46e5; }
+    .content { margin-left: 270px; padding: 20px; }
+    pre { background: #1f2937; color: #e5e7eb; padding: 15px; border-radius: 8px; overflow-x: auto; }
+    code { background: #e5e7eb; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+    pre code { background: transparent; color: inherit; }
+    blockquote { border-left: 4px solid #4f46e5; background: #f9fafb; padding: 10px 20px; margin: 1em 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+    th { background: #f3f4f6; }
+    h1, h2, h3 { color: #1f2937; }
+    .home-link { font-size: 24px; font-weight: bold; color: #4f46e5; text-decoration: none; }
+    a { color: #4f46e5; }
+    @media (max-width: 768px) {
+      .sidebar { position: static; width: 100%; height: auto; border-right: none; border-bottom: 1px solid #ddd; }
+      .content { margin-left: 0; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="sidebar">
+    <h3><a href="/" class="home-link">OpenClaw</a></h3>
+    <ul>
+  <li><a href="/01-overview">01 - overview</a></li>
+  <li><a href="/02-plugin-system">02 - plugin system</a></li>
+  <li><a href="/03-channel-system">03 - channel system</a></li>
+  <li><a href="/04-provider-system">04 - provider system</a></li>
+  <li><a href="/05-gateway-protocol">05 - gateway protocol</a></li>
+  <li><a href="/06-agent-system">06 - agent system</a></li>
+  <li><a href="/07-acp">07 - acp</a></li>
+  <li><a href="/08-config-system">08 - config system</a></li>
+  <li><a href="/09-memory-system">09 - memory system</a></li>
+  <li><a href="/10-ui-frontend">10 - ui frontend</a></li>
+  <li><a href="/11-tui">11 - tui</a></li>
+  <li><a href="/12-mobile-apps">12 - mobile apps</a></li>
+  <li><a href="/13-bundled-plugins">13 - bundled plugins</a></li>
+  <li><a href="/14-packages">14 - packages</a></li>
+  <li><a href="/15-cli-daemon">15 - cli daemon</a></li>
+  <li><a href="/16-testing">16 - testing</a></li>
+  <li><a href="/17-acp-deep-dive">17 - acp deep dive</a></li>
+  <li><a href="/18-infra-hooks-tasks">18 - infra hooks tasks</a></li>
+  <li><a href="/19-vendor-skills-python">19 - vendor skills python</a></li>
+  <li><a href="/20-plugin-loader-deep-dive">20 - plugin loader deep dive</a></li>
+  <li><a href="/21-channel-deep-dive">21 - channel deep dive</a></li>
+  <li><a href="/22-embedded-runner-deep-dive">22 - embedded runner deep dive</a></li>
+  <li><a href="/23-gateway-server-methods">23 - gateway server methods</a></li>
+  <li><a href="/24-telegram-extension">24 - telegram extension</a></li>
+    </ul>
+  </nav>
+  <main class="content">
+    <h1>Packages Architecture</h1>
+<blockquote>
+<p><em>Part of the OpenClaw Architecture Analysis — see <a href="./01-overview.md">01-overview.md</a></em></p>
+</blockquote>
+<hr>
+<h2>1. Overview</h2>
+<p>Three private npm packages are published from <code>packages/</code>:</p>
+<ul>
+<li><code>@openclaw/plugin-sdk</code> — public plugin SDK</li>
+<li><code>@openclaw/memory-host-sdk</code> — memory backend SDK</li>
+<li><code>@openclaw/plugin-package-contract</code> — external plugin validation</li>
+</ul>
+<hr>
+<h2>2. @openclaw/plugin-sdk</h2>
+<p><strong>Location:</strong> <code>packages/plugin-sdk/</code>
+<strong>Purpose:</strong> The canonical public SDK for building OpenClaw plugins (both bundled and third-party)</p>
+<h3>2.1 Exports (40+ paths)</h3>
+<pre><code class="language-json">// package.json exports
+{
+  &quot;name&quot;: &quot;@openclaw/plugin-sdk&quot;,
+  &quot;exports&quot;: {
+    &quot;.&quot;: &quot;./dist/index.js&quot;,
+    &quot;./plugin-entry&quot;: &quot;./dist/plugin-entry.js&quot;,
+    &quot;./provider-entry&quot;: &quot;./dist/provider-entry.js&quot;,
+    &quot;./channel-entry-contract&quot;: &quot;./dist/channel-entry-contract.js&quot;,
+    &quot;./channel-contract&quot;: &quot;./dist/channel-contract.js&quot;,
+    &quot;./core&quot;: &quot;./dist/core.js&quot;,
+    &quot;./provider-auth&quot;: &quot;./dist/provider-auth.js&quot;,
+    &quot;./provider-catalog-shared&quot;: &quot;./dist/provider-catalog-shared.js&quot;,
+    &quot;./provider-http&quot;: &quot;./dist/provider-http.js&quot;,
+    &quot;./provider-model-types&quot;: &quot;./dist/provider-model-types.js&quot;,
+    &quot;./provider-stream-family&quot;: &quot;./dist/provider-stream-family.js&quot;,
+    &quot;./provider-tools&quot;: &quot;./dist/provider-tools.js&quot;,
+    &quot;./provider-model-shared&quot;: &quot;./dist/provider-model-shared.js&quot;,
+    &quot;./runtime&quot;: &quot;./dist/runtime.js&quot;,
+    &quot;./agent-runtime&quot;: &quot;./dist/agent-runtime.js&quot;,
+    &quot;./channel-runtime&quot;: &quot;./dist/channel-runtime.js&quot;,
+    &quot;./acp-runtime&quot;: &quot;./dist/acp-runtime.js&quot;,
+    &quot;./image-generation&quot;: &quot;./dist/image-generation.js&quot;,
+    &quot;./music-generation&quot;: &quot;./dist/music-generation.js&quot;,
+    &quot;./video-generation&quot;: &quot;./dist/video-generation.js&quot;,
+    &quot;./speech&quot;: &quot;./dist/speech.js&quot;,
+    &quot;./realtime-transcription&quot;: &quot;./dist/realtime-transcription.js&quot;,
+    &quot;./realtime-voice&quot;: &quot;./dist/realtime-voice.js&quot;,
+    &quot;./media-understanding&quot;: &quot;./dist/media-understanding.js&quot;,
+    &quot;./memory-host-*&quot;: &quot;./dist/memory-host-*.js&quot;,
+    // ... 295 total subpaths
+  }
+}
+</code></pre>
+<h3>2.2 Plugin Entry</h3>
+<pre><code class="language-typescript">// packages/plugin-sdk/src/plugin-entry.ts (208 lines)
+export function definePluginEntry(config: PluginEntryConfig): PluginEntry {
+  return {
+    id: config.id,
+    name: config.name,
+    register: config.register,
+    // ...
+  }
+}
+</code></pre>
+<h3>2.3 Provider Entry</h3>
+<pre><code class="language-typescript">// packages/plugin-sdk/src/provider-entry.ts (168 lines)
+export function defineSingleProviderPluginEntry(config: ProviderPluginConfig): PluginEntry {
+  // Sugar for single-provider plugins
+  // Automatically wires auth + catalog
+}
+</code></pre>
+<h3>2.4 Channel Entry Contract</h3>
+<pre><code class="language-typescript">// packages/plugin-sdk/src/channel-entry-contract.ts (522 lines)
+export function defineBundledChannelEntry(config: ChannelEntryConfig): ChannelEntry {
+  // Lazy-loading channel entry
+  // JITI for .ts loading in dev
+  // Direct require for .js in dist/
+}
+</code></pre>
+<h3>2.5 Re-exports from Core</h3>
+<p>The package re-exports from <code>src/plugin-sdk/</code> in the monorepo:</p>
+<pre><code class="language-typescript">// packages/plugin-sdk/src/core.ts
+export * from &quot;../../../src/plugin-sdk/plugin-entry.js&quot;
+export * from &quot;../../../src/plugin-sdk/provider-entry.js&quot;
+export * from &quot;../../../src/plugin-sdk/channel-entry-contract.js&quot;
+export * from &quot;../../../src/plugin-sdk/channel-contract.js&quot;
+// ... all public types
+</code></pre>
+<hr>
+<h2>3. @openclaw/memory-host-sdk</h2>
+<p><strong>Location:</strong> <code>packages/memory-host-sdk/</code>
+<strong>Purpose:</strong> SDK for building memory/embedding backend implementations</p>
+<h3>3.1 Purpose</h3>
+<p>Plugin authors who want to build memory backends (like LanceDB, file-based, wiki-style) use this SDK to implement:</p>
+<ul>
+<li>Embedding computation</li>
+<li>Storage engines</li>
+<li>Batch processing</li>
+<li>Query handling</li>
+</ul>
+<h3>3.2 Exports</h3>
+<pre><code class="language-json">// package.json
+{
+  &quot;name&quot;: &quot;@openclaw/memory-host-sdk&quot;,
+  &quot;exports&quot;: {
+    &quot;./runtime&quot;: &quot;./dist/runtime.js&quot;,
+    &quot;./runtime-core&quot;: &quot;./dist/runtime-core.js&quot;,
+    &quot;./runtime-cli&quot;: &quot;./dist/runtime-cli.js&quot;,
+    &quot;./runtime-files&quot;: &quot;./dist/runtime-files.js&quot;,
+    &quot;./engine&quot;: &quot;./dist/engine.js&quot;,
+    &quot;./engine-foundation&quot;: &quot;./dist/engine-foundation.js&quot;,
+    &quot;./engine-storage&quot;: &quot;./dist/engine-storage.js&quot;,
+    &quot;./engine-embeddings&quot;: &quot;./dist/engine-embeddings.js&quot;,
+    &quot;./engine-qmd&quot;: &quot;./dist/engine-qmd.js&quot;,
+    &quot;./host/batch-runner&quot;: &quot;./dist/host/batch-runner.js&quot;,
+    &quot;./host/batch-http&quot;: &quot;./dist/host/batch-http.js&quot;,
+    &quot;./host/batch-status&quot;: &quot;./dist/host/batch-status.js&quot;,
+    &quot;./host/embeddings&quot;: &quot;./dist/host/embeddings.js&quot;,
+    &quot;./host/embeddings-remote-client&quot;: &quot;./dist/host/embeddings-remote-client.js&quot;,
+    &quot;./host/embeddings-remote-fetch&quot;: &quot;./dist/host/embeddings-remote-fetch.js&quot;
+  }
+}
+</code></pre>
+<h3>3.3 Runtime Interfaces</h3>
+<pre><code class="language-typescript">// packages/memory-host-sdk/src/runtime.ts
+export interface MemoryHostRuntime {
+  storage: StorageEngine
+  embeddings: EmbeddingsEngine
+  query: QueryEngine
+}
+
+// packages/memory-host-sdk/src/runtime-core.ts
+export interface MemoryHostRuntimeCore {
+  computeEmbedding(text: string): Promise&lt;number[]&gt;
+  computeEmbeddings(texts: string[]): Promise&lt;number[][]&gt;
+}
+</code></pre>
+<h3>3.4 Engine Interfaces</h3>
+<pre><code class="language-typescript">// packages/memory-host-sdk/src/engine-foundation.ts
+export interface MemoryEngineFoundation {
+  initialize(): Promise&lt;void&gt;
+  store(key: string, value: MemoryEntry): Promise&lt;void&gt;
+  retrieve(key: string): Promise&lt;MemoryEntry | null&gt;
+  delete(key: string): Promise&lt;void&gt;
+  search(query: string, options?: SearchOptions): Promise&lt;SearchResult[]&gt;
+}
+
+// packages/memory-host-sdk/src/engine-embeddings.ts
+export interface EmbeddingsEngine {
+  computeEmbedding(text: string): Promise&lt;number[]&gt;
+  computeEmbeddings(texts: string[]): Promise&lt;number[][]&gt;
+  findSimilar(embedding: number[], options?: SimilarityOptions): Promise&lt;MemoryEntry[]&gt;
+}
+</code></pre>
+<h3>3.5 Batch Processing</h3>
+<pre><code class="language-typescript">// packages/memory-host-sdk/src/host/batch-runner.ts
+export class BatchRunner {
+  constructor(options: BatchRunnerOptions)
+  submit(job: BatchJob): Promise&lt;BatchJobResult&gt;
+  getStatus(jobId: string): BatchJobStatus
+  cancel(jobId: string): Promise&lt;void&gt;
+}
+
+// packages/memory-host-sdk/src/host/batch-http.ts
+export class BatchHttpClient {
+  constructor(baseUrl: string, auth?: AuthOptions)
+  submitBatch(job: BatchJob): Promise&lt;BatchSubmitResponse&gt;
+  getResults(jobId: string): Promise&lt;BatchResults&gt;
+}
+</code></pre>
+<hr>
+<h2>4. @openclaw/plugin-package-contract</h2>
+<p><strong>Location:</strong> <code>packages/plugin-package-contract/</code>
+<strong>Purpose:</strong> Validates that external (third-party) plugin <code>package.json</code> files conform to the expected structure</p>
+<h3>4.1 Purpose</h3>
+<p>When loading third-party plugins (not bundled), OpenClaw validates the plugin&#39;s <code>package.json</code> to ensure:</p>
+<ul>
+<li>Required fields are present (<code>name</code>, <code>version</code>, <code>main</code>, <code>openclaw</code>)</li>
+<li>Exports are correctly configured</li>
+<li>Peer dependencies are satisfied</li>
+<li>Manifest file exists</li>
+</ul>
+<h3>4.2 API</h3>
+<pre><code class="language-typescript">// packages/plugin-package-contract/src/index.ts (91 lines)
+export function validateExternalCodePluginPackageJson(
+  packageJson: unknown
+): ExternalCodePluginValidationResult {
+  // Returns { valid: true } or { valid: false, errors: string[] }
+}
+</code></pre>
+<h3>4.3 Validation Rules</h3>
+<pre><code class="language-typescript">interface ExternalCodePluginValidationResult {
+  valid: boolean
+  errors?: string[]
+  warnings?: string[]
+  metadata?: {
+    id?: string
+    version?: string
+    manifestPath?: string
+  }
+}
+</code></pre>
+<hr>
+<h2>5. Package Build</h2>
+<h3>5.1 Build System</h3>
+<p>Packages are built using the monorepo&#39;s build system (<code>tsdown</code> or similar), outputting to <code>dist/</code> directories with proper ESM/CommonJS separation.</p>
+<h3>5.2 SDK Subpath Entries</h3>
+<p><strong>File:</strong> <code>scripts/lib/plugin-sdk-entrypoints.json</code> (295 entries)</p>
+<p>This JSON file lists all 295 public subpaths under <code>openclaw/plugin-sdk/</code>:</p>
+<pre><code class="language-json">[
+  &quot;openclaw/plugin-sdk&quot;,
+  &quot;openclaw/plugin-sdk/core&quot;,
+  &quot;openclaw/plugin-sdk/plugin-entry&quot;,
+  &quot;openclaw/plugin-sdk/provider-entry&quot;,
+  // ... 291 more
+]
+</code></pre>
+<p>Used by the build system to generate <code>package.json</code> <code>exports</code> field.</p>
+<hr>
+<h2>6. Key Files</h2>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Lines</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>packages/plugin-sdk/package.json</code></td>
+<td>~50</td>
+<td>Package exports (295 subpaths)</td>
+</tr>
+<tr>
+<td><code>packages/plugin-sdk/src/plugin-entry.ts</code></td>
+<td>208</td>
+<td><code>definePluginEntry()</code></td>
+</tr>
+<tr>
+<td><code>packages/plugin-sdk/src/provider-entry.ts</code></td>
+<td>168</td>
+<td><code>defineSingleProviderPluginEntry()</code></td>
+</tr>
+<tr>
+<td><code>packages/plugin-sdk/src/channel-entry-contract.ts</code></td>
+<td>522</td>
+<td><code>defineBundledChannelEntry()</code></td>
+</tr>
+<tr>
+<td><code>packages/plugin-sdk/src/core.ts</code></td>
+<td>~100</td>
+<td>Full SDK barrel re-export</td>
+</tr>
+<tr>
+<td><code>packages/memory-host-sdk/package.json</code></td>
+<td>~30</td>
+<td>Memory host SDK exports</td>
+</tr>
+<tr>
+<td><code>packages/memory-host-sdk/src/runtime.ts</code></td>
+<td>~100</td>
+<td>Runtime interface</td>
+</tr>
+<tr>
+<td><code>packages/memory-host-sdk/src/engine-embeddings.ts</code></td>
+<td>~150</td>
+<td>Embeddings engine</td>
+</tr>
+<tr>
+<td><code>packages/memory-host-sdk/src/host/batch-runner.ts</code></td>
+<td>~100</td>
+<td>Batch processing</td>
+</tr>
+<tr>
+<td><code>packages/plugin-package-contract/src/index.ts</code></td>
+<td>91</td>
+<td>External plugin validation</td>
+</tr>
+<tr>
+<td><code>scripts/lib/plugin-sdk-entrypoints.json</code></td>
+<td>295 entries</td>
+<td>All SDK subpaths</td>
+</tr>
+</tbody></table>
+
+  </main>
+</body>
+</html>

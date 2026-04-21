@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>mobile apps</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      line-height: 1.6;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px;
+      color: #333;
+    }
+    .sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 250px;
+      height: 100vh;
+      background: #f8f9fa;
+      border-right: 1px solid #ddd;
+      padding: 20px;
+      overflow-y: auto;
+    }
+    .sidebar h3 { margin-top: 0; color: #4f46e5; }
+    .sidebar ul { list-style: none; padding: 0; }
+    .sidebar li { margin: 8px 0; }
+    .sidebar a { color: #333; text-decoration: none; font-size: 14px; }
+    .sidebar a:hover { color: #4f46e5; }
+    .content { margin-left: 270px; padding: 20px; }
+    pre { background: #1f2937; color: #e5e7eb; padding: 15px; border-radius: 8px; overflow-x: auto; }
+    code { background: #e5e7eb; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+    pre code { background: transparent; color: inherit; }
+    blockquote { border-left: 4px solid #4f46e5; background: #f9fafb; padding: 10px 20px; margin: 1em 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+    th { background: #f3f4f6; }
+    h1, h2, h3 { color: #1f2937; }
+    .home-link { font-size: 24px; font-weight: bold; color: #4f46e5; text-decoration: none; }
+    a { color: #4f46e5; }
+    @media (max-width: 768px) {
+      .sidebar { position: static; width: 100%; height: auto; border-right: none; border-bottom: 1px solid #ddd; }
+      .content { margin-left: 0; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="sidebar">
+    <h3><a href="/" class="home-link">OpenClaw</a></h3>
+    <ul>
+  <li><a href="/01-overview">01 - overview</a></li>
+  <li><a href="/02-plugin-system">02 - plugin system</a></li>
+  <li><a href="/03-channel-system">03 - channel system</a></li>
+  <li><a href="/04-provider-system">04 - provider system</a></li>
+  <li><a href="/05-gateway-protocol">05 - gateway protocol</a></li>
+  <li><a href="/06-agent-system">06 - agent system</a></li>
+  <li><a href="/07-acp">07 - acp</a></li>
+  <li><a href="/08-config-system">08 - config system</a></li>
+  <li><a href="/09-memory-system">09 - memory system</a></li>
+  <li><a href="/10-ui-frontend">10 - ui frontend</a></li>
+  <li><a href="/11-tui">11 - tui</a></li>
+  <li><a href="/12-mobile-apps">12 - mobile apps</a></li>
+  <li><a href="/13-bundled-plugins">13 - bundled plugins</a></li>
+  <li><a href="/14-packages">14 - packages</a></li>
+  <li><a href="/15-cli-daemon">15 - cli daemon</a></li>
+  <li><a href="/16-testing">16 - testing</a></li>
+  <li><a href="/17-acp-deep-dive">17 - acp deep dive</a></li>
+  <li><a href="/18-infra-hooks-tasks">18 - infra hooks tasks</a></li>
+  <li><a href="/19-vendor-skills-python">19 - vendor skills python</a></li>
+  <li><a href="/20-plugin-loader-deep-dive">20 - plugin loader deep dive</a></li>
+  <li><a href="/21-channel-deep-dive">21 - channel deep dive</a></li>
+  <li><a href="/22-embedded-runner-deep-dive">22 - embedded runner deep dive</a></li>
+  <li><a href="/23-gateway-server-methods">23 - gateway server methods</a></li>
+  <li><a href="/24-telegram-extension">24 - telegram extension</a></li>
+    </ul>
+  </nav>
+  <main class="content">
+    <h1>Mobile &amp; Desktop Apps Architecture</h1>
+<blockquote>
+<p><em>Part of the OpenClaw Architecture Analysis — see <a href="./01-overview.md">01-overview.md</a></em></p>
+</blockquote>
+<hr>
+<h2>1. Overview</h2>
+<p>OpenClaw has native apps for iOS, Android, macOS, and a speech wake-word daemon called Swabble. All share a common protocol library (<code>OpenClawKit</code>) for gateway communication.</p>
+<hr>
+<h2>2. Shared Protocol: OpenClawKit</h2>
+<p><strong>Location:</strong> <code>apps/shared/OpenClawKit/</code></p>
+<p>Swift package providing shared gateway protocol and UI components.</p>
+<h3>2.1 Structure</h3>
+<pre><code>apps/shared/OpenClawKit/
+├── Package.swift (62 lines)
+├── OpenClawProtocol/
+│   └── GatewayModels.swift          # Cross-platform wire types
+├── OpenClawKit/
+│   ├── GatewayChannel.swift         # WebSocket gateway client
+│   ├── GatewayConnectChallengeSupport.swift
+│   ├── GatewayTLSStore.swift
+│   ├── BonjourServiceResolverSupport.swift
+│   ├── CameraCommands.swift
+│   ├── LocationCommands.swift
+│   └── 60+ other utilities
+└── OpenClawChatUI/
+    ├── ChatComposer.swift
+    ├── ChatView.swift
+    ├── ChatViewModel.swift
+    └── ChatMarkdownRenderer.swift
+</code></pre>
+<h3>2.2 Gateway Protocol Version</h3>
+<pre><code class="language-swift">let GATEWAY_PROTOCOL_VERSION = 3
+</code></pre>
+<hr>
+<h2>3. iOS App</h2>
+<p><strong>Location:</strong> <code>apps/ios/</code>
+<strong>Framework:</strong> Swift 6 / SwiftUI
+<strong>Build:</strong> Xcode via <code>project.yml</code> (XcodeGen/Tuplet)</p>
+<h3>3.1 Targets (from project.yml:355)</h3>
+<table>
+<thead>
+<tr>
+<th>Target</th>
+<th>Platform</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>OpenClaw</code></td>
+<td>iOS 18+</td>
+<td>Main iOS app</td>
+</tr>
+<tr>
+<td><code>OpenClawShareExtension</code></td>
+<td>iOS</td>
+<td>Share extension</td>
+</tr>
+<tr>
+<td><code>OpenClawActivityWidget</code></td>
+<td>iOS</td>
+<td>Live Activities widget</td>
+</tr>
+<tr>
+<td><code>OpenClawWatchApp</code></td>
+<td>watchOS 11+</td>
+<td>watchOS companion</td>
+</tr>
+<tr>
+<td><code>OpenClawWatchExtension</code></td>
+<td>watchOS 11+</td>
+<td>watchOS extension</td>
+</tr>
+<tr>
+<td><code>OpenClawTests</code></td>
+<td>iOS</td>
+<td>Unit tests</td>
+</tr>
+<tr>
+<td><code>OpenClawLogicTests</code></td>
+<td>iOS</td>
+<td>Logic tests</td>
+</tr>
+</tbody></table>
+<h3>3.2 App Structure</h3>
+<p><strong>Entry point:</strong> <code>apps/ios/Sources/OpenClawApp.swift:605</code></p>
+<pre><code class="language-swift">@main
+struct OpenClawApp: App {
+  var body: some Scene {
+    WindowGroup {
+      OpenClawAppView()
+    }
+  }
+}
+</code></pre>
+<h3>3.3 App Delegate</h3>
+<p><strong>File:</strong> <code>apps/ios/Sources/OpenClawApp.swift:24</code> (605 lines)</p>
+<pre><code class="language-swift">class OpenClawAppDelegate: NSObject, UIApplicationDelegate {
+  func application(
+    _ application: UIApplication,
+    didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+  ) -&gt; Bool {
+    // Push notification registration
+    // Background task registration
+    // Deep link handling
+  }
+}
+</code></pre>
+<h3>3.4 NodeAppModel</h3>
+<p><strong>File:</strong> <code>apps/ios/Sources/Model/NodeAppModel.swift:56</code> (200+ lines)</p>
+<p>Observable state manager:</p>
+<pre><code class="language-swift">@Observable
+class NodeAppModel {
+  var nodeGateway: GatewayNodeSession    // Device capabilities
+  var operatorGateway: GatewayNodeSession // Chat/talk/config
+  var voiceWakeManager: VoiceWakeManager
+  var talkModeManager: TalkModeManager
+
+  // Service providers
+  var cameraProvider: CameraService?
+  var locationProvider: LocationService?
+  var photosProvider: PhotosService?
+  var contactsProvider: ContactsService?
+  var calendarProvider: CalendarService?
+  var motionProvider: MotionService?
+}
+</code></pre>
+<h3>3.5 Gateway Connection</h3>
+<p><strong>File:</strong> <code>apps/ios/Sources/Gateway/GatewayConnectionController.swift</code></p>
+<p>Handles:</p>
+<ul>
+<li>Gateway discovery (Bonjour/DNS-SD)</li>
+<li>TLS trust evaluation</li>
+<li>Connection management</li>
+</ul>
+<h3>3.6 Voice Features</h3>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>File</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>VoiceWakeManager</td>
+<td><code>Voice/VoiceWakeManager.swift</code></td>
+<td>Wake word detection</td>
+</tr>
+<tr>
+<td>TalkModeManager</td>
+<td><code>Voice/TalkModeManager.swift</code></td>
+<td>Voice conversation</td>
+</tr>
+<tr>
+<td>TalkOrbOverlay</td>
+<td><code>Voice/TalkOrbOverlay.swift</code></td>
+<td>Voice UI indicator</td>
+</tr>
+</tbody></table>
+<h3>3.7 Push Notifications</h3>
+<pre><code>PushRegistrationManager.swift  — APNs registration
+ExecApprovalNotificationBridge.swift — Approval request push handling
+</code></pre>
+<h3>3.8 watchOS Support</h3>
+<ul>
+<li><strong>WatchApp</strong> — companion app on Apple Watch</li>
+<li><strong>WatchExtension</strong> — runs on watchOS 11+</li>
+<li><strong>WatchMessagingService</strong> — sends/receives messages via WatchConnectivity</li>
+<li><strong>WatchConnectivityTransport</strong> — Watch &lt;-&gt; iPhone communication</li>
+</ul>
+<hr>
+<h2>4. Android App</h2>
+<p><strong>Location:</strong> <code>apps/android/</code>
+<strong>Framework:</strong> Kotlin / Jetpack Compose
+<strong>Build:</strong> Gradle (build.gradle.kts, 291 lines)</p>
+<h3>4.1 Entry Points</h3>
+<pre><code class="language-kotlin">// MainActivity.kt (ComponentActivity)
+class MainActivity : ComponentActivity()
+
+// NodeApp.kt (Application class)
+class NodeApp : Application()
+
+// NodeRuntime.kt (1308 lines)
+class NodeRuntime(
+  context: Context,
+  prefs: SharedPreferences,
+  canvas: CanvasController,
+  camera: CameraCaptureManager,
+  location: LocationCaptureManager,
+  sms: SmsManager,
+  discovery: GatewayDiscovery,
+  operatorSession: GatewaySession,
+  nodeSession: GatewaySession,
+  chat: ChatController,
+  talkMode: TalkModeManager,
+  micCapture: MicCaptureManager,
+  invokeDispatcher: InvokeDispatcher
+)
+</code></pre>
+<h3>4.2 Build Configuration</h3>
+<pre><code class="language-kotlin">// build.gradle.kts
+android {
+  compileSdk = 36
+  minSdk = 31
+  targetSdk = 36
+
+  ndk {
+    abiFilters += listOf(&quot;armeabi-v7a&quot;, &quot;arm64-v8a&quot;, &quot;x86&quot;, &quot;x86_64&quot;)
+  }
+}
+
+productFlavors += listOf(&quot;play&quot;, &quot;thirdParty&quot;)
+// play: no SMS/call log permissions
+// thirdParty: SMS/call log enabled
+</code></pre>
+<h3>4.3 Dependencies</h3>
+<table>
+<thead>
+<tr>
+<th>Library</th>
+<th>Version</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Compose BOM</td>
+<td>2026.02.00</td>
+</tr>
+<tr>
+<td>CameraX</td>
+<td>1.5.2</td>
+</tr>
+<tr>
+<td>OkHttp</td>
+<td>5.3.2</td>
+</tr>
+<tr>
+<td>dnsjava</td>
+<td>3.6.4</td>
+</tr>
+</tbody></table>
+<h3>4.4 Gateway Discovery</h3>
+<p><strong>File:</strong> <code>apps/android/app/src/main/java/ai/openclaw/app/gateway/</code></p>
+<pre><code class="language-kotlin">GatewayDiscovery.kt    // Bonjour + DNS-SD
+GatewayEndpoint.kt     // Endpoint management
+GatewayTls.kt         // TLS trust evaluation
+GatewaySession.kt     // WebSocket client (500+ lines)
+</code></pre>
+<h3>4.5 Node Invoke Dispatcher</h3>
+<p><strong>File:</strong> <code>apps/android/app/src/main/java/ai/openclaw/app/node/InvokeDispatcher.kt</code></p>
+<p>Routes <code>node.invoke</code> commands to handlers:</p>
+<pre><code class="language-kotlin">sealed class InvokeRequest {
+  data class CameraCapture(val params: CameraParams) : InvokeRequest()
+  data class LocationGet(val params: LocationParams) : InvokeRequest()
+  data class NotificationSend(val params: NotificationParams) : InvokeRequest()
+  // ...
+}
+
+class InvokeDispatcher {
+  fun dispatch(request: InvokeRequest): InvokeResult
+}
+</code></pre>
+<h3>4.6 Voice</h3>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>MicCaptureManager</td>
+<td>Microphone capture for voice</td>
+</tr>
+<tr>
+<td>TalkModeManager</td>
+<td>Voice conversation</td>
+</tr>
+<tr>
+<td>VoiceWakeManager</td>
+<td>Wake word detection</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>5. macOS App</h2>
+<p><strong>Location:</strong> <code>apps/macos/</code>
+<strong>Framework:</strong> Swift 6 / SwiftUI
+<strong>Build:</strong> Swift Package Manager</p>
+<h3>5.1 Structure</h3>
+<pre><code>apps/macos/Sources/OpenClaw/
+├── AppState.swift
+├── GatewayConnection.swift
+├── CanvasWindowController.swift
+├── ChannelsStore.swift
+└── ConfigStore.swift
+</code></pre>
+<h3>5.2 Dependencies</h3>
+<ul>
+<li>MenuBarExtraAccess</li>
+<li>Swift Subprocess</li>
+<li>swift-log</li>
+<li>Sparkle (auto-update)</li>
+<li>Peekaboo (screen recording detection)</li>
+<li>MLXAudio (audio processing)</li>
+</ul>
+<hr>
+<h2>6. Swabble</h2>
+<p><strong>Location:</strong> <code>Swabble/</code>
+<strong>Framework:</strong> Swift 6.2
+<strong>Build:</strong> Swift Package Manager</p>
+<p>A macOS speech wake-word daemon that runs alongside the OpenClaw gateway.</p>
+<h3>6.1 Package Structure</h3>
+<pre><code class="language-swift">// Package.swift (56 lines)
+products += [
+  .library(name: &quot;Swabble&quot;, targets: [&quot;Swabble&quot;]),
+  .library(name: &quot;SwabbleKit&quot;, targets: [&quot;SwabbleKit&quot;]),  // Shared wake-gate
+  .executable(name: &quot;swabble&quot;, targets: [&quot;swabble&quot;])      // CLI
+]
+
+platforms = [.macOS(&quot;15.0&quot;), .iOS(&quot;17.0&quot;)]
+</code></pre>
+<h3>6.2 Products</h3>
+<table>
+<thead>
+<tr>
+<th>Product</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>Swabble</code></td>
+<td>Core daemon</td>
+</tr>
+<tr>
+<td><code>SwabbleKit</code></td>
+<td>Shared wake-gate library (used by iOS/macOS apps)</td>
+</tr>
+<tr>
+<td><code>swabble</code></td>
+<td>CLI tool</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>7. Cross-Platform Connection Architecture</h2>
+<pre><code>Native App
+├── GatewayChannel / GatewaySession (WebSocket)
+│   ├── TLS fingerprint verification
+│   ├── Device auth (device identity + role tokens)
+│   └── Reconnect with exponential backoff
+├── NodeAppModel / NodeRuntime (per-platform state)
+│   ├── nodeSession — node.invoke commands (camera, location, etc.)
+│   └── operatorSession — chat, talk, config
+└── GatewayDiscovery (mDNS/Bonjour + DNS-SD)
+</code></pre>
+<h3>7.1 Discovery</h3>
+<p>Both iOS and Android support <strong>gateway discovery via Bonjour/mDNS</strong> — apps can find a local gateway without knowing its IP address.</p>
+<h3>7.2 TLS Trust</h3>
+<p>Both iOS and Android implement <strong>TLS certificate fingerprint verification</strong> to prevent MITM attacks on local connections.</p>
+<hr>
+<h2>8. Key Files</h2>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Lines</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>apps/ios/Sources/OpenClawApp.swift</code></td>
+<td>605</td>
+<td>iOS app entry (@main)</td>
+</tr>
+<tr>
+<td><code>apps/ios/Sources/Model/NodeAppModel.swift</code></td>
+<td>200+</td>
+<td>iOS state manager</td>
+</tr>
+<tr>
+<td><code>apps/ios/project.yml</code></td>
+<td>355</td>
+<td>iOS XcodeGen config</td>
+</tr>
+<tr>
+<td><code>apps/android/app/src/main/java/ai/openclaw/app/NodeRuntime.kt</code></td>
+<td>1308</td>
+<td>Android core runtime</td>
+</tr>
+<tr>
+<td><code>apps/android/app/build.gradle.kts</code></td>
+<td>291</td>
+<td>Android Gradle config</td>
+</tr>
+<tr>
+<td><code>apps/shared/OpenClawKit/Package.swift</code></td>
+<td>62</td>
+<td>OpenClawKit package</td>
+</tr>
+<tr>
+<td><code>apps/shared/OpenClawKit/OpenClawKit/GatewayChannel.swift</code></td>
+<td>500+</td>
+<td>Swift gateway client</td>
+</tr>
+<tr>
+<td><code>Swabble/Package.swift</code></td>
+<td>56</td>
+<td>Swabble package</td>
+</tr>
+</tbody></table>
+
+  </main>
+</body>
+</html>

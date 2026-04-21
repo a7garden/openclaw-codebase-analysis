@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>plugin system</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      line-height: 1.6;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px;
+      color: #333;
+    }
+    .sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 250px;
+      height: 100vh;
+      background: #f8f9fa;
+      border-right: 1px solid #ddd;
+      padding: 20px;
+      overflow-y: auto;
+    }
+    .sidebar h3 { margin-top: 0; color: #4f46e5; }
+    .sidebar ul { list-style: none; padding: 0; }
+    .sidebar li { margin: 8px 0; }
+    .sidebar a { color: #333; text-decoration: none; font-size: 14px; }
+    .sidebar a:hover { color: #4f46e5; }
+    .content { margin-left: 270px; padding: 20px; }
+    pre { background: #1f2937; color: #e5e7eb; padding: 15px; border-radius: 8px; overflow-x: auto; }
+    code { background: #e5e7eb; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+    pre code { background: transparent; color: inherit; }
+    blockquote { border-left: 4px solid #4f46e5; background: #f9fafb; padding: 10px 20px; margin: 1em 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+    th { background: #f3f4f6; }
+    h1, h2, h3 { color: #1f2937; }
+    .home-link { font-size: 24px; font-weight: bold; color: #4f46e5; text-decoration: none; }
+    a { color: #4f46e5; }
+    @media (max-width: 768px) {
+      .sidebar { position: static; width: 100%; height: auto; border-right: none; border-bottom: 1px solid #ddd; }
+      .content { margin-left: 0; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="sidebar">
+    <h3><a href="/" class="home-link">OpenClaw</a></h3>
+    <ul>
+  <li><a href="/01-overview">01 - overview</a></li>
+  <li><a href="/02-plugin-system">02 - plugin system</a></li>
+  <li><a href="/03-channel-system">03 - channel system</a></li>
+  <li><a href="/04-provider-system">04 - provider system</a></li>
+  <li><a href="/05-gateway-protocol">05 - gateway protocol</a></li>
+  <li><a href="/06-agent-system">06 - agent system</a></li>
+  <li><a href="/07-acp">07 - acp</a></li>
+  <li><a href="/08-config-system">08 - config system</a></li>
+  <li><a href="/09-memory-system">09 - memory system</a></li>
+  <li><a href="/10-ui-frontend">10 - ui frontend</a></li>
+  <li><a href="/11-tui">11 - tui</a></li>
+  <li><a href="/12-mobile-apps">12 - mobile apps</a></li>
+  <li><a href="/13-bundled-plugins">13 - bundled plugins</a></li>
+  <li><a href="/14-packages">14 - packages</a></li>
+  <li><a href="/15-cli-daemon">15 - cli daemon</a></li>
+  <li><a href="/16-testing">16 - testing</a></li>
+  <li><a href="/17-acp-deep-dive">17 - acp deep dive</a></li>
+  <li><a href="/18-infra-hooks-tasks">18 - infra hooks tasks</a></li>
+  <li><a href="/19-vendor-skills-python">19 - vendor skills python</a></li>
+  <li><a href="/20-plugin-loader-deep-dive">20 - plugin loader deep dive</a></li>
+  <li><a href="/21-channel-deep-dive">21 - channel deep dive</a></li>
+  <li><a href="/22-embedded-runner-deep-dive">22 - embedded runner deep dive</a></li>
+  <li><a href="/23-gateway-server-methods">23 - gateway server methods</a></li>
+  <li><a href="/24-telegram-extension">24 - telegram extension</a></li>
+    </ul>
+  </nav>
+  <main class="content">
+    <h1>Plugin System Architecture</h1>
+<blockquote>
+<p><em>Part of the OpenClaw Architecture Analysis — see <a href="./01-overview.md">01-overview.md</a></em></p>
+</blockquote>
+<hr>
+<h2>1. Overview</h2>
+<p>The plugin system is OpenClaw&#39;s primary extension mechanism. It is <strong>manifest-first</strong> — plugin metadata (stored in <code>openclaw.plugin.json</code>) is read and processed before any plugin code executes. This enables config validation, activation planning, and setup workflows without loading the plugin runtime.</p>
+<p>There are ~130 bundled plugins in <code>extensions/</code>, and the architecture supports third-party plugins via the same contracts.</p>
+<hr>
+<h2>2. Plugin Manifest</h2>
+<p><strong>Manifest file:</strong> <code>openclaw.plugin.json</code> (defined by <code>PLUGIN_MANIFEST_FILENAME</code> in <code>src/plugins/manifest.ts</code>)</p>
+<p>The manifest is the <strong>control plane entry point</strong> for every plugin. It is read and validated before the plugin&#39;s TypeScript/JavaScript code is ever loaded.</p>
+<h3>2.1 Key Manifest Fields</h3>
+<pre><code class="language-typescript">// From src/plugins/manifest-types.ts
+interface PluginManifest {
+  id: string
+  configSchema: OpenClawPluginConfigSchema   // Zod-like validation
+  providers?: string[]                        // Provider IDs owned by this plugin
+  modelSupport?: {
+    modelPrefixes?: string[]                   // Cheap prefix-based model ownership
+  }
+  providerEndpoints?: ProviderEndpoint[]       // hostname/baseUrl matching
+  activation?: PluginManifestActivation        // Lazy activation triggers
+  setup?: PluginSetupMetadata                  // Cheap setup metadata
+  secrets?: PluginSecretSpec                   // Secret input paths
+  configContracts?: PluginConfigContract[]     // Dangerous flags
+  uiHints?: UiHintsPerField                    // UI labels, help text, advanced markers
+}
+</code></pre>
+<h3>2.2 Config Schema</h3>
+<p>The config schema uses a Zod-like structure with:</p>
+<ul>
+<li><code>safeParse()</code> / <code>validate()</code> methods</li>
+<li><code>uiHints</code> — per-field labels, help text, advanced markers</li>
+<li><code>jsonSchema</code> — JSON Schema export for tooling</li>
+</ul>
+<p>Example field schema entry:</p>
+<pre><code class="language-typescript">{
+  key: &quot;apiKey&quot;,
+  type: &quot;secret&quot;,
+  label: &quot;API Key&quot;,
+  description: &quot;Your OpenAI API key&quot;,
+  required: true,
+  advanced: false
+}
+</code></pre>
+<h3>2.3 Activation Triggers</h3>
+<pre><code class="language-typescript">type PluginManifestActivation =
+  | { kind: &quot;provider&quot;, provider: string }
+  | { kind: &quot;channel&quot;, channel: string }
+  | { kind: &quot;capability&quot;, capability: &quot;provider&quot; | &quot;channel&quot; | &quot;memory&quot; | &quot;tool&quot; }
+  | { kind: &quot;onRoutes&quot; }
+  | { kind: &quot;onCommands&quot; }
+  | { kind: &quot;onAgentHarnesses&quot; }
+</code></pre>
+<p>The activation planner (<code>src/plugins/activation-planner.ts</code>) reads these triggers and decides which plugins to load — <strong>no runtime execution needed</strong>.</p>
+<hr>
+<h2>3. Plugin Loading</h2>
+<h3>3.1 Loading Flow</h3>
+<pre><code>loadPlugins(PluginLoadOptions)
+  │
+  ├── discoverOpenClawPlugins()
+  │     Searches directories for openclaw.plugin.json files
+  │     Handles multiple formats: openclaw, codex, claude, cursor bundles
+  │
+  ├── loadPluginManifestRegistry()
+  │     Parses all manifest files
+  │     Validates config schemas
+  │     Builds manifest registry
+  │
+  ├── createPluginRegistry()
+  │     Builds registry with activation state
+  │
+  ├── buildPluginApi()
+  │     Constructs OpenClawPluginApi for each plugin
+  │     Injects runtime helpers
+  │
+  └── plugin.register() / plugin.activate()
+        Plugin code runs and registers capabilities
+</code></pre>
+<h3>3.2 Bundled Plugin Directory Resolution</h3>
+<p>From <code>src/plugins/bundled-dir.ts:193</code>:</p>
+<pre><code class="language-typescript">resolveBundledPluginsDir()
+  1. Check OPENCLAW_BUNDLED_PLUGINS_DIR env override
+  2. Try dist-runtime/extensions (local source checkout staging)
+  3. Try dist/extensions (built output)
+  4. Try extensions (source for dev)
+  5. For bun --compile: sibling extensions next to executable
+  6. Walk up from this module&#39;s location
+</code></pre>
+<h3>3.3 Bundle Format Support</h3>
+<p>The bundle manifest handler (<code>src/plugins/bundle-manifest.ts:150+</code>) handles:</p>
+<ul>
+<li><strong>Native OpenClaw:</strong> <code>openclaw.plugin.json</code></li>
+<li><strong>Codex bundles:</strong> <code>.codex-plugin/plugin.json</code></li>
+<li><strong>Claude bundles:</strong> <code>.claude-plugin/plugin.json</code></li>
+<li><strong>Cursor bundles:</strong> <code>.cursor-plugin/plugin.json</code></li>
+</ul>
+<h3>3.4 Lazy Loading Architecture</h3>
+<p>Channel plugins use <strong>four separate lazy module references</strong>:</p>
+<pre><code class="language-typescript">// From src/plugin-sdk/channel-entry-contract.ts:522
+defineBundledChannelEntry({
+  id: &quot;telegram&quot;,
+  name: &quot;Telegram&quot;,
+  description: &quot;Telegram channel plugin&quot;,
+  importMetaUrl: import.meta.url,
+  plugin: { specifier: &quot;./channel-plugin-api.js&quot;, exportName: &quot;telegramPlugin&quot; },
+  secrets: { specifier: &quot;./secret-contract-api.js&quot;, exportName: &quot;channelSecrets&quot; },
+  runtime: { specifier: &quot;./runtime-api.js&quot;, exportName: &quot;setTelegramRuntime&quot; },
+  accountInspect: { specifier: &quot;./account-inspect-api.js&quot;, exportName: &quot;inspectTelegramReadOnlyAccount&quot; },
+})
+</code></pre>
+<p>These are loaded <strong>on-demand</strong> via JITI (for <code>.ts</code> in dev) or direct <code>require</code> (for <code>.js</code> in <code>dist/</code>).</p>
+<h3>3.5 JITI Caching</h3>
+<p>JITI is used for loading <code>.ts</code> files in development mode, with a Windows-specific <code>nodeRequire</code> fast path for <code>.js</code> files in the <code>dist/</code> output directory.</p>
+<hr>
+<h2>4. Plugin API Surface</h2>
+<h3>4.1 OpenClawPluginApi</h3>
+<p>Full interface from <code>src/plugins/types.ts:1892-2046</code>:</p>
+<pre><code class="language-typescript">export type OpenClawPluginApi = {
+  // Identity
+  id: string
+  name: string
+  version: string
+  description: string
+  source: &quot;bundled&quot; | &quot;external&quot;
+  rootDir: string
+  registrationMode: &quot;standard&quot; | &quot;strict&quot;
+
+  // Config
+  config: ResolvedPluginConfig
+  pluginConfig: PluginConfigResolved
+
+  // Runtime
+  runtime: PluginRuntime
+
+  // Registration methods
+  registerTool(tool: OpenClawTool): void
+  registerHook(hook: string, handler: HookHandler): void
+  registerHttpRoute(method, path, handler): void
+  registerChannel(channel: ChannelPlugin): void
+  registerGatewayMethod(name, handler): void
+  registerCli(command: CliCommandDefinition): void
+  registerReload(onReload: () =&gt; void): void
+  registerService(service: ServiceDefinition): void
+
+  // Provider registration
+  registerProvider(provider: ProviderPlugin): void
+  registerCliBackend(backend: CliBackendPlugin): void
+  registerSpeechProvider(provider: SpeechProviderPlugin): void
+  registerRealtimeTranscriptionProvider(provider: RealtimeTranscriptionProviderPlugin): void
+  registerRealtimeVoiceProvider(provider: RealtimeVoiceProviderPlugin): void
+  registerMediaUnderstandingProvider(provider: MediaUnderstandingProviderPlugin): void
+  registerImageGenerationProvider(provider: ImageGenerationProviderPlugin): void
+  registerMusicGenerationProvider(provider: MusicGenerationProviderPlugin): void
+  registerVideoGenerationProvider(provider: VideoGenerationProviderPlugin): void
+  registerWebFetchProvider(provider: WebFetchProviderPlugin): void
+  registerWebSearchProvider(provider: WebSearchProviderPlugin): void
+  registerMemoryEmbeddingProvider(provider: MemoryEmbeddingProviderPlugin): void
+
+  // Memory &amp; agents
+  registerMemoryCapability(capability: MemoryCapabilityPlugin): void
+  registerAgentHarness(harness: AgentHarnessPlugin): void
+
+  // Context engines
+  registerContextEngine(engine: ContextEnginePlugin): void
+
+  // Commands
+  registerCommand(command: CommandPlugin): void
+
+  // Hook registration
+  on(event: string, handler: HookHandler): void
+
+  // Secrets
+  getSecretInputSecret(name: string): Promise&lt;string | null&gt;
+}
+</code></pre>
+<h3>4.2 PluginRuntime Interface</h3>
+<p>From <code>src/plugins/runtime/types.ts:72</code>:</p>
+<pre><code class="language-typescript">export type PluginRuntime = {
+  // Subagent runtime access
+  subagent: SubagentRuntime
+
+  // Channel runtime access
+  channel: ChannelRuntime
+
+  // ACP runtime access
+  acp: AcpRuntime
+}
+</code></pre>
+<hr>
+<h2>5. Plugin Shapes</h2>
+<p>From <code>docs/plugins/architecture.md:72-85</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Shape</th>
+<th>Description</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>plain-capability</strong></td>
+<td>Single capability type</td>
+<td><code>mistral</code> (provider-only)</td>
+</tr>
+<tr>
+<td><strong>hybrid-capability</strong></td>
+<td>Multiple capability types</td>
+<td><code>openai</code> (text + speech + media + image)</td>
+</tr>
+<tr>
+<td><strong>hook-only</strong></td>
+<td>Registers only hooks, no capabilities</td>
+<td>Some diagnostic plugins</td>
+</tr>
+<tr>
+<td><strong>non-capability</strong></td>
+<td>Registers tools/commands/services, no capabilities</td>
+<td><code>browser</code> tool</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>6. Provider Plugin Entry</h2>
+<h3>6.1 definePluginEntry</h3>
+<p>For multi-capability plugins, use <code>definePluginEntry()</code> from <code>openclaw/plugin-sdk/plugin-entry</code>:</p>
+<pre><code class="language-typescript">// From extensions/openai/index.ts:21-52
+export default definePluginEntry({
+  id: &quot;openai&quot;,
+  name: &quot;OpenAI Provider&quot;,
+  description: &quot;Bundled OpenAI provider plugins&quot;,
+  register(api) {
+    api.registerProvider(buildProviderWithPromptContribution(buildOpenAIProvider()))
+    api.registerProvider(buildProviderWithPromptContribution(buildOpenAICodexProviderPlugin()))
+    api.registerMemoryEmbeddingProvider(openAiMemoryEmbeddingProviderAdapter)
+    api.registerImageGenerationProvider(buildOpenAIImageGenerationProvider())
+    api.registerRealtimeTranscriptionProvider(buildOpenAIRealtimeTranscriptionProvider())
+    api.registerRealtimeVoiceProvider(buildOpenAIRealtimeVoiceProvider())
+    api.registerSpeechProvider(buildOpenAISpeechProvider())
+    api.registerMediaUnderstandingProvider(openaiMediaUnderstandingProvider)
+    api.registerMediaUnderstandingProvider(openaiCodexMediaUnderstandingProvider)
+    api.registerVideoGenerationProvider(buildOpenAIVideoGenerationProvider())
+  },
+})
+</code></pre>
+<h3>6.2 defineSingleProviderPluginEntry</h3>
+<p>For single-provider plugins, use the sugar from <code>openclaw/plugin-sdk/provider-entry</code>:</p>
+<pre><code class="language-typescript">export default defineSingleProviderPluginEntry({
+  id: &quot;anthropic&quot;,
+  name: &quot;Anthropic&quot;,
+  description: &quot;Anthropic model provider&quot;,
+  provider: buildAnthropicProvider(),
+})
+</code></pre>
+<p>This provides auth + catalog wiring automatically.</p>
+<hr>
+<h2>7. Channel Plugin Entry</h2>
+<p>For channel plugins, use <code>defineBundledChannelEntry()</code> from <code>openclaw/plugin-sdk/channel-entry-contract.ts:522</code>:</p>
+<pre><code class="language-typescript">// From extensions/telegram/index.ts
+export default defineBundledChannelEntry({
+  id: &quot;telegram&quot;,
+  name: &quot;Telegram&quot;,
+  description: &quot;Telegram channel plugin&quot;,
+  importMetaUrl: import.meta.url,
+  plugin: { specifier: &quot;./channel-plugin-api.js&quot;, exportName: &quot;telegramPlugin&quot; },
+  secrets: { specifier: &quot;./secret-contract-api.js&quot;, exportName: &quot;channelSecrets&quot; },
+  runtime: { specifier: &quot;./runtime-api.js&quot;, exportName: &quot;setTelegramRuntime&quot; },
+  accountInspect: { specifier: &quot;./account-inspect-api.js&quot;, exportName: &quot;inspectTelegramReadOnlyAccount&quot; },
+})
+</code></pre>
+<hr>
+<h2>8. SDK Boundary Rules</h2>
+<h3>8.1 What Extensions Can Import</h3>
+<pre><code>✓ openclaw/plugin-sdk/*           (public SDK only)
+✓ ./api.ts                        (extension&#39;s own public barrel)
+✓ ./runtime-api.ts                (extension&#39;s own runtime seam)
+✓ Relative paths within extension
+
+✗ src/**                          (core internals)
+✗ src/channels/**                 (channel internals)
+✗ src/plugin-sdk-internal/**      (internal SDK)
+✗ extensions/*/src/**             (another extension&#39;s internals)
+✗ Paths outside extension root    (except openclaw/plugin-sdk/*)
+</code></pre>
+<h3>8.2 What Core Can Import</h3>
+<pre><code>✗ extensions/*/src/**            (plugin internals)
+✗ Extensions&#39; onboard.js          (plugin-specific)
+✓ Plugin api.ts / public SDK      (generic contract)
+✓ Plugin manifest metadata        (control plane)
+</code></pre>
+<hr>
+<h2>9. Plugin Discovery</h2>
+<h3>9.1 Discovery Process</h3>
+<p>From <code>src/plugins/loader.ts:400+</code>:</p>
+<ol>
+<li><strong>Scan directories</strong> — walk plugin directories looking for <code>openclaw.plugin.json</code></li>
+<li><strong>Parse manifests</strong> — extract metadata, validate schema structure</li>
+<li><strong>Build index</strong> — map plugin IDs to manifest locations</li>
+</ol>
+<h3>9.2 Public Surface Runtime</h3>
+<p>From <code>src/plugins/public-surface-runtime.ts:80+</code>:</p>
+<p>Collects public surface artifacts from plugin directories:</p>
+<ul>
+<li>Top-level <code>.ts</code>, <code>.mts</code>, <code>.js</code>, <code>.mjs</code> files</li>
+<li>Excludes: tests, <code>.d.ts</code>, <code>config-api.*</code></li>
+</ul>
+<hr>
+<h2>10. Hook System</h2>
+<p>Plugins can register hooks via <code>api.on(event, handler)</code> or <code>api.registerHook()</code>:</p>
+<pre><code class="language-typescript">// From src/plugins/hook-types.ts
+type PluginHookName =
+  | &quot;onAgentStart&quot;
+  | &quot;onAgentStop&quot;
+  | &quot;onMessageSend&quot;
+  | &quot;onMessageReceive&quot;
+  | &quot;onApprovalRequest&quot;
+  // ... extensive list
+</code></pre>
+<p>Internal hooks are defined in <code>src/hooks/</code> with hook runners in <code>src/hooks/</code> as well.</p>
+<hr>
+<h2>11. Key Files</h2>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Lines</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>src/plugins/types.ts</code></td>
+<td>~1230</td>
+<td>Full plugin API surface, provider/channel/memory type definitions</td>
+</tr>
+<tr>
+<td><code>src/plugins/manifest.ts</code></td>
+<td>~200+</td>
+<td><code>PLUGIN_MANIFEST_FILENAME</code>, manifest parsing</td>
+</tr>
+<tr>
+<td><code>src/plugins/manifest-types.ts</code></td>
+<td>~230</td>
+<td>PluginFormat, PluginBundleFormat, config schema types</td>
+</tr>
+<tr>
+<td><code>src/plugins/loader.ts</code></td>
+<td>400+</td>
+<td>Main plugin loading orchestration</td>
+</tr>
+<tr>
+<td><code>src/plugins/activation-planner.ts</code></td>
+<td>80+</td>
+<td>Manifest-first activation planning</td>
+</tr>
+<tr>
+<td><code>src/plugins/bundled-dir.ts</code></td>
+<td>193</td>
+<td>Bundled plugins directory resolution</td>
+</tr>
+<tr>
+<td><code>src/plugins/bundle-manifest.ts</code></td>
+<td>150+</td>
+<td>Multi-format bundle manifest handling</td>
+</tr>
+<tr>
+<td><code>src/plugins/public-surface-runtime.ts</code></td>
+<td>80+</td>
+<td>Public surface artifact collection</td>
+</tr>
+<tr>
+<td><code>src/plugin-sdk/plugin-entry.ts</code></td>
+<td>208</td>
+<td><code>definePluginEntry()</code></td>
+</tr>
+<tr>
+<td><code>src/plugin-sdk/provider-entry.ts</code></td>
+<td>168</td>
+<td><code>defineSingleProviderPluginEntry()</code></td>
+</tr>
+<tr>
+<td><code>src/plugin-sdk/channel-entry-contract.ts</code></td>
+<td>522</td>
+<td><code>defineBundledChannelEntry()</code> with lazy loading</td>
+</tr>
+<tr>
+<td><code>src/plugin-sdk/core.ts</code></td>
+<td>150+</td>
+<td>Full SDK barrel re-export</td>
+</tr>
+<tr>
+<td><code>src/plugins/runtime/types.ts</code></td>
+<td>72</td>
+<td><code>PluginRuntime</code> interface</td>
+</tr>
+<tr>
+<td><code>src/plugins/hook-types.ts</code></td>
+<td>~150</td>
+<td>Hook type definitions</td>
+</tr>
+</tbody></table>
+
+  </main>
+</body>
+</html>

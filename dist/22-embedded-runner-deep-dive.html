@@ -1,0 +1,1105 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>embedded runner deep dive</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      line-height: 1.6;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px;
+      color: #333;
+    }
+    .sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 250px;
+      height: 100vh;
+      background: #f8f9fa;
+      border-right: 1px solid #ddd;
+      padding: 20px;
+      overflow-y: auto;
+    }
+    .sidebar h3 { margin-top: 0; color: #4f46e5; }
+    .sidebar ul { list-style: none; padding: 0; }
+    .sidebar li { margin: 8px 0; }
+    .sidebar a { color: #333; text-decoration: none; font-size: 14px; }
+    .sidebar a:hover { color: #4f46e5; }
+    .content { margin-left: 270px; padding: 20px; }
+    pre { background: #1f2937; color: #e5e7eb; padding: 15px; border-radius: 8px; overflow-x: auto; }
+    code { background: #e5e7eb; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+    pre code { background: transparent; color: inherit; }
+    blockquote { border-left: 4px solid #4f46e5; background: #f9fafb; padding: 10px 20px; margin: 1em 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+    th { background: #f3f4f6; }
+    h1, h2, h3 { color: #1f2937; }
+    .home-link { font-size: 24px; font-weight: bold; color: #4f46e5; text-decoration: none; }
+    a { color: #4f46e5; }
+    @media (max-width: 768px) {
+      .sidebar { position: static; width: 100%; height: auto; border-right: none; border-bottom: 1px solid #ddd; }
+      .content { margin-left: 0; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="sidebar">
+    <h3><a href="/" class="home-link">OpenClaw</a></h3>
+    <ul>
+  <li><a href="/01-overview">01 - overview</a></li>
+  <li><a href="/02-plugin-system">02 - plugin system</a></li>
+  <li><a href="/03-channel-system">03 - channel system</a></li>
+  <li><a href="/04-provider-system">04 - provider system</a></li>
+  <li><a href="/05-gateway-protocol">05 - gateway protocol</a></li>
+  <li><a href="/06-agent-system">06 - agent system</a></li>
+  <li><a href="/07-acp">07 - acp</a></li>
+  <li><a href="/08-config-system">08 - config system</a></li>
+  <li><a href="/09-memory-system">09 - memory system</a></li>
+  <li><a href="/10-ui-frontend">10 - ui frontend</a></li>
+  <li><a href="/11-tui">11 - tui</a></li>
+  <li><a href="/12-mobile-apps">12 - mobile apps</a></li>
+  <li><a href="/13-bundled-plugins">13 - bundled plugins</a></li>
+  <li><a href="/14-packages">14 - packages</a></li>
+  <li><a href="/15-cli-daemon">15 - cli daemon</a></li>
+  <li><a href="/16-testing">16 - testing</a></li>
+  <li><a href="/17-acp-deep-dive">17 - acp deep dive</a></li>
+  <li><a href="/18-infra-hooks-tasks">18 - infra hooks tasks</a></li>
+  <li><a href="/19-vendor-skills-python">19 - vendor skills python</a></li>
+  <li><a href="/20-plugin-loader-deep-dive">20 - plugin loader deep dive</a></li>
+  <li><a href="/21-channel-deep-dive">21 - channel deep dive</a></li>
+  <li><a href="/22-embedded-runner-deep-dive">22 - embedded runner deep dive</a></li>
+  <li><a href="/23-gateway-server-methods">23 - gateway server methods</a></li>
+  <li><a href="/24-telegram-extension">24 - telegram extension</a></li>
+    </ul>
+  </nav>
+  <main class="content">
+    <h1>pi-embedded-runner Deep Dive</h1>
+<p><strong>File:</strong> <code>src/agents/pi-embedded-runner/run.ts</code> (main orchestrator, <del>2641 lines)<br><strong>Core attempt execution:</strong> <code>src/agents/pi-embedded-runner/run/attempt.ts</code> (</del>2642 lines)<br><strong>Backend proxy:</strong> <code>src/agents/pi-embedded-runner/run/backend.ts</code> (9 lines)<br><strong>Auth controller:</strong> <code>src/agents/pi-embedded-runner/run/auth-controller.ts</code> (527 lines)<br><strong>Transport stream resolution:</strong> <code>src/agents/pi-embedded-runner/stream-resolution.ts</code> (128 lines)</p>
+<hr>
+<h2>1. Single-Attempt Execution Engine</h2>
+<h3>1.1 Entry Points and Flow</h3>
+<p>The embedded runner has two distinct execution paths:</p>
+<h4>Primary Entry: <code>runEmbeddedPiAgent()</code> (<code>run.ts:204</code>)</h4>
+<p>This is the <strong>outer retry loop orchestrator</strong> that manages the complete agent lifecycle including:</p>
+<ul>
+<li>Auth profile rotation across attempts</li>
+<li>Compaction decision-making between attempts</li>
+<li>Retry policy enforcement</li>
+<li>Timeout tracking</li>
+</ul>
+<pre><code>runEmbeddedPiAgent()
+├── Initialize auth profile candidates (line 444)
+├── Acquire session write lock
+├── while (true) {  // Main retry loop (line 630)
+│   ├── runEmbeddedAttemptWithBackend()  // Single attempt
+│   ├── Handle attempt results
+│   │   ├── Check for context overflow → trigger compaction
+│   │   ├── Check for prompt errors → classify failover
+│   │   ├── Check for auth errors → rotate profiles
+│   │   └── Check for timeout → timeout compaction
+│   └── Loop termination or continue
+└── Return final EmbeddedPiRunResult
+</code></pre>
+<h4>Single-Attempt: <code>runEmbeddedAttemptWithBackend()</code> (<code>run/backend.ts:4-8</code>)</h4>
+<pre><code class="language-typescript">export async function runEmbeddedAttemptWithBackend(
+  params: EmbeddedRunAttemptParams,
+): Promise&lt;EmbeddedRunAttemptResult&gt; {
+  return runAgentHarnessAttemptWithFallback(params);
+}
+</code></pre>
+<p>This delegates to <code>runAgentHarnessAttemptWithFallback()</code> which is the <strong>actual per-attempt execution harness</strong> - the single-shot execution unit. Each call to <code>runEmbeddedAttemptWithBackend()</code> represents one distinct attempt with one specific auth profile and model configuration.</p>
+<h4>Per-Attempt Execution: <code>runEmbeddedAttempt()</code> (<code>run/attempt.ts:417-2641</code>)</h4>
+<p>This is the core single-attempt execution engine. It:</p>
+<ol>
+<li><p><strong>Initializes the session</strong> (line 448-1127):</p>
+<ul>
+<li>Creates/resumes a <code>SessionManager</code></li>
+<li>Builds system prompt</li>
+<li>Resolves tools (built-in + custom + MCP + LSP)</li>
+<li>Establishes transport stream function</li>
+<li>Applies stream wrapper chain</li>
+</ul>
+</li>
+<li><p><strong>Applies stream wrappers</strong> (lines 1198-1471):</p>
+<ul>
+<li>Each wrapper transforms the stream function</li>
+<li>Wrappers handle auth injection, payload normalization, error recovery</li>
+</ul>
+</li>
+<li><p><strong>Sanitizes session history</strong> (lines 1473-1524):</p>
+<ul>
+<li>Removes thinking blocks (transcript policy)</li>
+<li>Sanitizes tool call IDs</li>
+<li>Downgrades reasoning blocks for strict providers</li>
+</ul>
+</li>
+<li><p><strong>Runs the prompt</strong> (lines 1824-2184):</p>
+<ul>
+<li>Builds effective prompt with hooks</li>
+<li>Calls <code>activeSession.prompt()</code> - the actual LLM call</li>
+</ul>
+</li>
+<li><p><strong>Collects results</strong> (lines 2300-2578):</p>
+<ul>
+<li>Extracts assistant texts</li>
+<li>Collects tool metadata</li>
+<li>Builds usage totals</li>
+</ul>
+</li>
+</ol>
+<h3>1.2 Key Differences: <code>runEmbeddedPiAgent()</code> vs <code>runEmbeddedAttempt()</code></h3>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th><code>runEmbeddedPiAgent()</code> (outer)</th>
+<th><code>runEmbeddedAttempt()</code> (inner)</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Scope</strong></td>
+<td>Full agent lifecycle</td>
+<td>Single API call attempt</td>
+</tr>
+<tr>
+<td><strong>Auth handling</strong></td>
+<td>Profile rotation across attempts</td>
+<td>Uses provided auth profile</td>
+</tr>
+<tr>
+<td><strong>Compaction</strong></td>
+<td>Triggers between attempts</td>
+<td>Self-contained (SDK auto-compacts)</td>
+</tr>
+<tr>
+<td><strong>Retry loop</strong></td>
+<td>Yes, manages iterations</td>
+<td>No, one-shot</td>
+</tr>
+<tr>
+<td><strong>Timeout handling</strong></td>
+<td>Per-attempt timeout + grace period</td>
+<td>Uses <code>runAbortController</code></td>
+</tr>
+<tr>
+<td><strong>Abort propagation</strong></td>
+<td>Propagates to attempt via abort signal</td>
+<td>Creates internal <code>runAbortController</code></td>
+</tr>
+</tbody></table>
+<h3>1.3 Compaction Pipeline</h3>
+<p>Compaction is triggered when context overflow threatens to kill a prompt. The system has <strong>three compaction triggers</strong>:</p>
+<h4>Trigger 1: Timeout-Triggered Compaction (<code>run.ts:885-980</code>)</h4>
+<p>When LLM times out with high context usage (&gt;65% of token budget consumed by prompt):</p>
+<pre><code>timedOut &amp;&amp; tokenUsedRatio &gt; 0.65
+  → contextEngine.compact({ force: true, trigger: &quot;timeout_recovery&quot; })
+  → MAX_TIMEOUT_COMPACTION_ATTEMPTS = 2
+</code></pre>
+<h4>Trigger 2: Overflow-Triggered Compaction (<code>run.ts:1004-1152</code>)</h4>
+<p>When context overflow error detected in assistant response:</p>
+<pre><code>isLikelyContextOverflowError(errorText)
+  → contextEngine.compact({ force: true, trigger: &quot;overflow&quot; })
+  → MAX_OVERFLOW_COMPACTION_ATTEMPTS = 3
+</code></pre>
+<h4>Trigger 3: Preemptive Compaction (<code>run.ts:2076-2164</code>)</h4>
+<p>Before prompt submission, checks if context would overflow:</p>
+<pre><code class="language-typescript">shouldPreemptivelyCompactBeforePrompt({
+  messages, systemPrompt, prompt, contextTokenBudget, reserveTokens
+})
+  → Can truncate tool results only (fast path)
+  → Or trigger full compaction
+</code></pre>
+<h4>Compaction Execution (<code>compact.ts:146-300+</code>)</h4>
+<p>The <code>compactEmbeddedPiSession()</code> function:</p>
+<ol>
+<li>Acquires session write lock</li>
+<li>Creates a <strong>separate compaction session</strong> via <code>createAgentSession()</code></li>
+<li>Builds a summary prompt asking the model to summarize conversation</li>
+<li>Runs the summary prompt against the model</li>
+<li>Replaces old messages with the summary</li>
+<li>Runs post-compaction hooks</li>
+</ol>
+<p>Key code path in <code>compact.ts</code>:</p>
+<pre><code class="language-typescript">// Line ~400: Create compaction session
+({ session } = await createAgentSession({...}));
+
+// Line ~500: Run summary prompt
+await session.prompt(summaryPrompt);
+
+// Line ~600: Truncate session after compaction
+truncateSessionAfterCompaction(sessionManager, firstKeptEntryId);
+
+// Line ~700: Post-compaction hooks
+await runPostCompactionHooks({...});
+</code></pre>
+<h3>1.4 Auth Profile Rotation</h3>
+<p>The <code>createEmbeddedRunAuthController()</code> (<code>run/auth-controller.ts:43-527</code>) manages auth throughout the run loop.</p>
+<h4>Initialization (<code>initializeAuthProfile()</code>, line 436-497)</h4>
+<pre><code class="language-typescript">async function initializeAuthProfile() {
+  // Filter out locked profile from auto-candidates
+  const autoProfileCandidates = profileCandidates.filter(
+    c =&gt; c !== lockedProfileId
+  );
+  
+  // Check if all auto-profiles are in cooldown
+  const allAutoProfilesInCooldown = autoProfileCandidates.every(
+    c =&gt; isProfileInCooldown(store, c, undefined, modelId)
+  );
+  
+  // If all in cooldown and transient probe allowed, probe anyway
+  const allowTransientCooldownProbe = allAutoProfilesInCooldown &amp;&amp; shouldAllowCooldownProbe(...);
+  
+  // Iterate through candidates until one works
+  while (profileIndex &lt; profileCandidates.length) {
+    const candidate = profileCandidates[profileIndex];
+    if (inCooldown &amp;&amp; !allowTransientCooldownProbe) {
+      profileIndex++;
+      continue;
+    }
+    await applyApiKeyInfo(candidate);
+    break;
+  }
+}
+</code></pre>
+<h4>Profile Advancement (<code>advanceAuthProfile()</code>, line 406-434)</h4>
+<pre><code class="language-typescript">async function advanceAuthProfile(): Promise&lt;boolean&gt; {
+  if (lockedProfileId) return false;  // Never rotate locked profiles
+  
+  let nextIndex = profileIndex + 1;
+  while (nextIndex &lt; profileCandidates.length) {
+    const candidate = profileCandidates[nextIndex];
+    
+    // Skip profiles in cooldown
+    if (isProfileInCooldown(store, candidate, undefined, modelId)) {
+      nextIndex++;
+      continue;
+    }
+    
+    try {
+      await applyApiKeyInfo(candidate);
+      profileIndex = nextIndex;
+      thinkLevel = initialThinkLevel;  // Reset thinking on profile change
+      attemptedThinking.clear();
+      return true;
+    } catch (err) {
+      nextIndex++;
+    }
+  }
+  return false;
+}
+</code></pre>
+<h4>Runtime Auth Refresh (<code>refreshRuntimeAuth()</code>, line 160-235)</h4>
+<p>For providers with expiring credentials (OAuth tokens):</p>
+<pre><code class="language-typescript">async function refreshRuntimeAuth(reason: string) {
+  const runtimeAuthState = getRuntimeAuthState();
+  
+  // Schedule refresh before expiry
+  const refreshAt = runtimeAuthState.expiresAt - RUNTIME_AUTH_REFRESH_MARGIN_MS;
+  scheduleRuntimeAuthRefresh(refreshAt);
+  
+  // On refresh, call provider&#39;s refresh endpoint
+  const preparedAuth = await prepareRuntimeAuthForModel({
+    runtimeModel, apiKey: sourceApiKey, authMode, profileId
+  });
+  
+  // Update stored credentials
+  authStorage.setRuntimeApiKey(provider, preparedAuth.apiKey);
+}
+</code></pre>
+<h3>1.5 Tool Execution and Result Streaming</h3>
+<p>Tools execute within <code>activeSession.prompt()</code> as part of the agent loop. The pi-agent-core SDK handles tool call/result cycling internally.</p>
+<h4>Tool Result Handling (<code>run/attempt.ts:2496-2501</code>)</h4>
+<pre><code class="language-typescript">const toolMetasNormalized = toolMetas
+  .filter((entry): entry is { toolName: string; meta?: string } =&gt;
+    typeof entry.toolName === &quot;string&quot; &amp;&amp; entry.toolName.trim().length &gt; 0,
+  )
+  .map((entry) =&gt; ({ toolName: entry.toolName, meta: entry.meta }));
+</code></pre>
+<h4>Tool Result Truncation (<code>tool-result-truncation.ts</code>)</h4>
+<p>When tool results are too large for context:</p>
+<pre><code class="language-typescript">truncateOversizedToolResultsInSession({
+  sessionManager,
+  contextWindowTokens,
+  maxCharsOverride: toolResultMaxChars,
+})
+</code></pre>
+<h4>Client Tool Detection (<code>run/attempt.ts:1057-1107</code>)</h4>
+<p>Client tools (OpenResponses hosted tools) are detected via:</p>
+<pre><code class="language-typescript">clientToolCallDetected = { name: toolName, params: toolParams };
+</code></pre>
+<h3>1.6 Error Classification and Handling Paths</h3>
+<h4>Error Sources</h4>
+<ol>
+<li><strong>Prompt errors</strong> - failures during <code>session.prompt()</code> call</li>
+<li><strong>Assistant errors</strong> - model returned <code>stopReason: &quot;error&quot;</code></li>
+<li><strong>Context overflow</strong> - prompt too large for context window</li>
+<li><strong>Auth errors</strong> - invalid/expired credentials</li>
+<li><strong>Rate limits</strong> - provider rate limiting</li>
+<li><strong>Timeouts</strong> - LLM not responding</li>
+</ol>
+<h4>Error Classification (<code>pi-embedded-helpers.ts</code>)</h4>
+<pre><code class="language-typescript">classifyFailoverReason(errorText, { provider })
+  → &quot;auth&quot;        // 401, invalid credentials
+  → &quot;rate_limit&quot;  // 429, too many requests
+  → &quot;overloaded&quot;  // 503, server busy
+  → &quot;timeout&quot;     // Request timeout
+  → &quot;context_overflow&quot;  // Prompt too large
+  → &quot;billing&quot;     // Payment required
+</code></pre>
+<h4>Error Handling Decision Tree (<code>run.ts:1364-1391</code>)</h4>
+<pre><code class="language-typescript">let promptFailoverDecision = resolveRunFailoverDecision({
+  stage: &quot;prompt&quot;,
+  aborted,
+  externalAbort,
+  fallbackConfigured,
+  failoverFailure: promptFailoverFailure,
+  failoverReason: promptFailoverReason,
+  profileRotated: false,
+});
+
+// Possible actions from failover policy:
+// - &quot;rotate_profile&quot; → advanceAuthProfile(), continue
+// - &quot;fallback_model&quot; → try next model in fallback chain
+// - &quot;give_up&quot; → return error payload
+</code></pre>
+<h4>Specific Error Paths</h4>
+<p><strong>Context Overflow</strong> (<code>run.ts:1004-1234</code>):</p>
+<pre><code>detected → compact → retry → if still overflow → tool truncation → retry → give up
+</code></pre>
+<p><strong>Auth Error</strong> (<code>run.ts:1253-1255</code>):</p>
+<pre><code>detected → maybeRefreshRuntimeAuth() → if refreshed, retry
+           ↓ if not refreshable
+           advanceAuthProfile() → retry with new profile
+</code></pre>
+<p><strong>Rate Limit</strong> (<code>run.ts:1357-1362</code>):</p>
+<pre><code>detected → maybeEscalateRateLimitProfileFallback()
+           → if profile rotation exhausted → fallback to model
+</code></pre>
+<hr>
+<h2>2. Transport Stream System</h2>
+<h3>2.1 Stream Function Architecture</h3>
+<p>The <strong>stream function</strong> (<code>StreamFn</code>) is the core abstraction for making LLM API calls. It takes:</p>
+<pre><code class="language-typescript">type StreamFn = (
+  model: Model&lt;Api&gt;,           // Model descriptor
+  context: StreamContext,       // Messages + system prompt
+  options?: StreamOptions      // Auth headers, transport config
+) =&gt; AsyncGenerator&lt;StreamEvent&gt;
+</code></pre>
+<h3>2.2 Stream Resolution Chain (<code>stream-resolution.ts</code>)</h3>
+<p>The <code>resolveEmbeddedAgentStreamFn()</code> function (<code>stream-resolution.ts:64-128</code>) builds the appropriate stream function:</p>
+<pre><code class="language-typescript">export function resolveEmbeddedAgentStreamFn(params: {
+  currentStreamFn: StreamFn | undefined;
+  providerStreamFn?: StreamFn;
+  shouldUseWebSocketTransport: boolean;
+  wsApiKey?: string;
+  sessionId: string;
+  signal?: AbortSignal;
+  model: EmbeddedRunAttemptParams[&quot;model&quot;];
+  resolvedApiKey?: string;
+  authStorage?: { getApiKey(provider: string): Promise&lt;string | undefined&gt; };
+}): StreamFn
+</code></pre>
+<p><strong>Resolution priority:</strong></p>
+<ol>
+<li><strong>Provider stream</strong> - If <code>providerStreamFn</code> exists (from <code>registerProviderStreamForModel</code>), use it</li>
+<li><strong>WebSocket transport</strong> - For OpenAI models with API key, use WebSocket</li>
+<li><strong>Anthropic Vertex</strong> - Special handling for Vertex AI</li>
+<li><strong>Boundary-aware</strong> - For models that need boundary markers</li>
+<li><strong>Session default</strong> - Fall back to session&#39;s stream function</li>
+</ol>
+<h3>2.3 The Stream Wrapper Chain (<code>run/attempt.ts:1198-1471</code>)</h3>
+<p>Each wrapper wraps the previous one, creating a <strong>layered transformation pipeline</strong>. Here&#39;s the complete chain:</p>
+<h4>Wrapper 1: Cache Trace (<code>attempt.ts:1304</code>)</h4>
+<pre><code class="language-typescript">activeSession.agent.streamFn = cacheTrace.wrapStreamFn(activeSession.agent.streamFn);
+</code></pre>
+<ul>
+<li>Records timing for each stage</li>
+<li>Logs prompt cache events</li>
+</ul>
+<h4>Wrapper 2: Thinking Block Dropping (<code>attempt.ts:1311-1329</code>)</h4>
+<pre><code class="language-typescript">if (transcriptPolicy.dropThinkingBlocks) {
+  activeSession.agent.streamFn = (model, context, options) =&gt; {
+    const messages = ctx?.messages;
+    if (!Array.isArray(messages)) return inner(model, context, options);
+    const sanitized = dropThinkingBlocks(messages);
+    return inner(model, { ...context, messages: sanitized }, options);
+  };
+}
+</code></pre>
+<ul>
+<li>Strips <code>thinking</code> blocks from replayed messages</li>
+<li>Required for Anthropic endpoints that reject replayed thinking signatures</li>
+</ul>
+<h4>Wrapper 3: Tool Call ID Sanitization (<code>attempt.ts:1341-1374</code>)</h4>
+<pre><code class="language-typescript">if (transcriptPolicy.sanitizeToolCallIds &amp;&amp; transcriptPolicy.toolCallIdMode) {
+  activeSession.agent.streamFn = (model, context, options) =&gt; {
+    const nextMessages = sanitizeReplayToolCallIdsForStream({ messages, mode, allowedToolNames });
+    return inner(model, { ...context, messages: nextMessages }, options);
+  };
+}
+</code></pre>
+<ul>
+<li>Normalizes tool call IDs to provider-expected format</li>
+<li>e.g., <code>[a-zA-Z0-9]{9}</code> for strict providers</li>
+</ul>
+<h4>Wrapper 4: OpenAI Reasoning Block Downgrade (<code>attempt.ts:1376-1397</code>)</h4>
+<pre><code class="language-typescript">if (isOpenAIResponsesApi) {
+  activeSession.agent.streamFn = (model, context, options) =&gt; {
+    const sanitized = downgradeOpenAIReasoningBlocks(messages);
+    const paired = downgradeOpenAIFunctionCallReasoningPairs(reasoningSanitized);
+    return inner(model, { ...context, messages: sanitized }, options);
+  };
+}
+</code></pre>
+<ul>
+<li>For OpenAI Responses API, strips incompatible reasoning blocks</li>
+</ul>
+<h4>Wrapper 5: Sessions Yield Guard (<code>attempt.ts:1399-1408</code>)</h4>
+<pre><code class="language-typescript">activeSession.agent.streamFn = (model, context, options) =&gt; {
+  if (yieldDetected &amp;&amp; signal.aborted &amp;&amp; signal.reason === &quot;sessions_yield&quot;) {
+    return createYieldAbortedResponse(model);
+  }
+  return innerStreamFn(model, context, options);
+};
+</code></pre>
+<ul>
+<li>Intercepts abort signal to handle sessions_yield tool invocations</li>
+</ul>
+<h4>Wrapper 6: Malformed Tool Call Sanitization (<code>attempt.ts:1413-1424</code>)</h4>
+<pre><code class="language-typescript">activeSession.agent.streamFn = wrapStreamFnSanitizeMalformedToolCalls(
+  activeSession.agent.streamFn,
+  allowedToolNames,
+  transcriptPolicy,
+);
+</code></pre>
+<ul>
+<li>Fixes tool names with surrounding whitespace (e.g., &quot; read &quot; → &quot;read&quot;)</li>
+</ul>
+<h4>Wrapper 7: Tool Name Trimming + Unknown Tool Guard (<code>attempt.ts:1418-1424</code>)</h4>
+<pre><code class="language-typescript">activeSession.agent.streamFn = wrapStreamFnTrimToolCallNames(
+  activeSession.agent.streamFn,
+  allowedToolNames,
+  { unknownToolThreshold: resolveUnknownToolGuardThreshold(clientToolLoopDetection) },
+);
+</code></pre>
+<ul>
+<li>Trims whitespace from tool names</li>
+<li>After N consecutive unknown tool calls, rewrites assistant message to stop</li>
+</ul>
+<h4>Wrapper 8: Anthropic Tool Argument Repair (<code>attempt.ts:1426-1433</code>)</h4>
+<pre><code class="language-typescript">if (params.model.api === &quot;anthropic-messages&quot; &amp;&amp; shouldRepairMalformedAnthropicToolCallArguments(params.provider)) {
+  activeSession.agent.streamFn = wrapStreamFnRepairMalformedToolCallArguments(
+    activeSession.agent.streamFn,
+  );
+}
+</code></pre>
+<ul>
+<li>Repairs malformed JSON in tool call arguments</li>
+</ul>
+<h4>Wrapper 9: xAI HTML Entity Decoding (<code>attempt.ts:1435-1438</code>)</h4>
+<pre><code class="language-typescript">if (resolveToolCallArgumentsEncoding(params.model) === &quot;html-entities&quot;) {
+  activeSession.agent.streamFn = wrapStreamFnDecodeXaiToolCallArguments(
+    activeSession.agent.streamFn,
+  );
+}
+</code></pre>
+<ul>
+<li>Decodes HTML entities in xAI tool call arguments</li>
+</ul>
+<h4>Wrapper 10: Anthropic Payload Logging (<code>attempt.ts:1441-1445</code>)</h4>
+<pre><code class="language-typescript">if (anthropicPayloadLogger) {
+  activeSession.agent.streamFn = anthropicPayloadLogger.wrapStreamFn(
+    activeSession.agent.streamFn,
+  );
+}
+</code></pre>
+<ul>
+<li>Logs full request/response payloads for debugging</li>
+</ul>
+<h4>Wrapper 11: Sensitive Stop Reason Recovery (<code>attempt.ts:1449-1451</code>)</h4>
+<pre><code class="language-typescript">activeSession.agent.streamFn = wrapStreamFnHandleSensitiveStopReason(
+  activeSession.agent.streamFn,
+);
+</code></pre>
+<ul>
+<li>Recovers from provider-specific stop reasons that would otherwise cause uncaught errors</li>
+</ul>
+<h4>Wrapper 12: LLM Idle Timeout (<code>attempt.ts:1464-1470</code>)</h4>
+<pre><code class="language-typescript">if (idleTimeoutMs &gt; 0) {
+  activeSession.agent.streamFn = streamWithIdleTimeout(
+    activeSession.agent.streamFn,
+    idleTimeoutMs,
+    (error) =&gt; idleTimeoutTrigger?.(error),
+  );
+}
+</code></pre>
+<ul>
+<li>Detects when LLM stops responding mid-stream</li>
+</ul>
+<h3>2.4 Provider-Specific Stream Wrappers</h3>
+<h4>OpenAI Stream Wrappers (<code>openai-stream-wrappers.ts</code>)</h4>
+<table>
+<thead>
+<tr>
+<th>Wrapper</th>
+<th>Function</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>createOpenAIResponsesContextManagementWrapper</code></td>
+<td>Line 162-195</td>
+<td>Handle <code>store</code>, <code>prompt_cache</code> policy</td>
+</tr>
+<tr>
+<td><code>createOpenAIReasoningCompatibilityWrapper</code></td>
+<td>Line 197-212</td>
+<td>Apply reasoning effort to OpenAI payloads</td>
+</tr>
+<tr>
+<td><code>createOpenAIStringContentWrapper</code></td>
+<td>Line 214-227</td>
+<td>Flatten completion messages to string content</td>
+</tr>
+<tr>
+<td><code>createOpenAIThinkingLevelWrapper</code></td>
+<td>Line 229-264</td>
+<td>Apply thinking/reasoning configuration</td>
+</tr>
+<tr>
+<td><code>createOpenAIFastModeWrapper</code></td>
+<td>Line 266-291</td>
+<td>Apply <code>fastMode: priority</code> override</td>
+</tr>
+<tr>
+<td><code>createOpenAIServiceTierWrapper</code></td>
+<td>Line 293-308</td>
+<td>Apply <code>service_tier</code> parameter</td>
+</tr>
+<tr>
+<td><code>createOpenAITextVerbosityWrapper</code></td>
+<td>Line 310-338</td>
+<td>Apply <code>text.verbosity</code> parameter</td>
+</tr>
+<tr>
+<td><code>createCodexNativeWebSearchWrapper</code></td>
+<td>Line 339-390</td>
+<td>Inject Codex native web search</td>
+</tr>
+<tr>
+<td><code>createOpenAIDefaultTransportWrapper</code></td>
+<td>Line 400-413</td>
+<td>Set default transport + WS warmup</td>
+</tr>
+<tr>
+<td><code>createOpenAIAttributionHeadersWrapper</code></td>
+<td>Line 415-437</td>
+<td>Add required attribution headers</td>
+</tr>
+</tbody></table>
+<h4>Proxy Stream Wrappers (<code>proxy-stream-wrappers.ts</code>)</h4>
+<table>
+<thead>
+<tr>
+<th>Wrapper</th>
+<th>Function</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>createOpenRouterSystemCacheWrapper</code></td>
+<td>Line 49-78</td>
+<td>Apply Anthropic cache markers for OpenRouter</td>
+</tr>
+<tr>
+<td><code>createOpenRouterWrapper</code></td>
+<td>Line 80-108</td>
+<td>Normalize reasoning payload for OpenRouter</td>
+</tr>
+<tr>
+<td><code>createKilocodeWrapper</code></td>
+<td>Line 114-143</td>
+<td>Apply Kilocode-specific headers and reasoning</td>
+</tr>
+</tbody></table>
+<h3>2.5 How Tools Emit Through the Stream</h3>
+<p>Tools emit events through the pi-agent-core SDK&#39;s <code>subscribeEmbeddedPiSession()</code> (<code>pi-embedded-subscribe.ts</code>):</p>
+<pre><code class="language-typescript">const subscription = subscribeEmbeddedPiSession(
+  buildEmbeddedSubscriptionParams({
+    session: activeSession,
+    toolResultFormat: params.toolResultFormat,
+    shouldEmitToolResult: params.shouldEmitToolResult,
+    onToolResult: params.onToolResult,
+    // ... callbacks
+  }),
+);
+
+// Extracted from subscription:
+const { assistantTexts, toolMetas, unsubscribe, waitForCompactionRetry } = subscription;
+</code></pre>
+<p>The subscription handles:</p>
+<ul>
+<li>Tool call parsing from model response</li>
+<li>Tool execution (via the agent session)</li>
+<li>Tool result collection</li>
+<li>Compaction notifications</li>
+</ul>
+<h3>2.6 How Auth Profile Changes Flow Through</h3>
+<p>Auth changes are applied <strong>before</strong> the stream wrapper chain via <code>applyApiKeyInfo()</code>:</p>
+<pre><code class="language-typescript">// In auth-controller.ts:360-404
+async function applyApiKeyInfo(candidate?: string): Promise&lt;void&gt; {
+  const apiKeyInfo = await resolveApiKeyInfoForCandidate(candidate);
+  params.setApiKeyInfo(apiKeyInfo);
+  
+  // Prepare runtime auth (OAuth refresh tokens, etc.)
+  const preparedAuth = await prepareRuntimeAuthForModel({
+    runtimeModel, apiKey: apiKeyInfo.apiKey, authMode, profileId
+  });
+  
+  // Apply auth to runtime model (headers, baseUrl)
+  applyPreparedRuntimeRequestOverrides({ runtimeModel, preparedAuth });
+  
+  // Update auth storage for provider
+  authStorage.setRuntimeApiKey(runtimeModel.provider, preparedAuth.apiKey);
+  
+  // Set runtime auth state for refresh scheduling
+  params.setRuntimeAuthState({
+    generation: nextRuntimeAuthGeneration(),
+    sourceApiKey: apiKeyInfo.apiKey,
+    authMode: apiKeyInfo.mode,
+    profileId: apiKeyInfo.profileId,
+    expiresAt: preparedAuth.expiresAt,
+  });
+}
+</code></pre>
+<p>When auth changes, the runtime model is updated with new headers/baseUrl, so subsequent stream calls use the new credentials automatically.</p>
+<hr>
+<h2>3. Agent Host Interface</h2>
+<p><strong>Note:</strong> The <code>embedded-agent-host.ts</code> file does not exist in this codebase. The agent host functionality is distributed across:</p>
+<ul>
+<li><strong><code>run/attempt.ts</code></strong> - Main session management and prompt execution</li>
+<li><strong><code>run/backend.ts</code></strong> - Backend harness delegation</li>
+<li><strong><code>pi-embedded-subscribe.ts</code></strong> - Session subscription for event streaming</li>
+</ul>
+<h3>3.1 Session Lifecycle</h3>
+<h4>Session Creation (<code>run/attempt.ts:1111-1127</code>)</h4>
+<pre><code class="language-typescript">({ session } = await createAgentSession({
+  cwd: resolvedWorkspace,
+  agentDir,
+  authStorage: params.authStorage,
+  modelRegistry: params.modelRegistry,
+  model: params.model,
+  thinkingLevel: mapThinkingLevel(params.thinkLevel),
+  tools: builtInTools,
+  customTools: allCustomTools,
+  sessionManager,
+  settingsManager,
+  resourceLoader,
+}));
+</code></pre>
+<h4>Session Disposal (<code>run/attempt.ts:2627-2636</code>)</h4>
+<pre><code class="language-typescript">await cleanupEmbeddedAttemptResources({
+  removeToolResultContextGuard,
+  flushPendingToolResultsAfterIdle,
+  session,
+  sessionManager,
+  releaseWsSession,
+  sessionId: params.sessionId,
+  bundleLspRuntime,
+  sessionLock,
+});
+</code></pre>
+<h3>3.2 Message Handling</h3>
+<p>Messages flow through the system:</p>
+<ol>
+<li><strong>User prompt</strong> arrives at <code>runEmbeddedPiAgent()</code></li>
+<li><strong>Hook processing</strong> adds context (<code>resolvePromptBuildHookResult</code>)</li>
+<li><strong>Prompt submission</strong> via <code>activeSession.prompt(effectivePrompt)</code></li>
+<li><strong>Stream events</strong> emitted through wrapper chain</li>
+<li><strong>Subscription</strong> (<code>subscribeEmbeddedPiSession</code>) processes events</li>
+<li><strong>Tool calls</strong> handled internally by agent loop</li>
+<li><strong>Final response</strong> collected after model stops</li>
+</ol>
+<h3>3.3 Tool Invocation Flow</h3>
+<pre><code>Model response (stopReason: &quot;tool_calls&quot;)
+  → subscribeEmbeddedPiSession detects tool calls
+  → Tools resolved from registry
+  → Tool execution via session.agent.executeTool()
+  → Tool results appended to session messages
+  → Model called again with tool results
+  → Loop continues until stopReason != &quot;tool_calls&quot;
+</code></pre>
+<hr>
+<h2>4. Tool System</h2>
+<h3>4.1 Tool Registration Pipeline (<code>run/attempt.ts:487-717</code>)</h3>
+<pre><code class="language-typescript">const toolsRaw = params.disableTools
+  ? []
+  : createOpenClawCodingTools({
+      agentId: sessionAgentId,
+      exec: { ...params.execOverrides, elevated: params.bashElevated },
+      sandbox,
+      messageProvider: params.messageChannel ?? params.messageProvider,
+      // ... many context parameters
+    });
+
+// Apply toolsAllow filter
+const toolsFiltered = applyEmbeddedAttemptToolsAllow(toolsRaw, params.toolsAllow);
+
+// Split into built-in vs custom
+const { builtInTools, customTools } = splitSdkTools({
+  tools: toolsFiltered,
+  sandboxEnabled: !!sandbox?.enabled,
+});
+
+// Add MCP tools
+const bundleMcpRuntime = await materializeBundleMcpToolsForRun({
+  runtime: bundleMcpSessionRuntime,
+  reservedToolNames: [...tools.map(t =&gt; t.name), ...clientToolNames],
+});
+
+// Add LSP tools
+const bundleLspRuntime = await createBundleLspToolRuntime({
+  workspaceDir: effectiveWorkspace,
+  reservedToolNames: [...],
+});
+
+// Apply effective tool policy (sandbox constraints, etc.)
+const filteredBundledTools = applyFinalEffectiveToolPolicy({
+  bundledTools: [...bundleMcpTools, ...bundleLspTools],
+  config: params.config,
+  sandboxToolPolicy: sandbox?.tools,
+  // ...
+});
+
+// Final effective tools
+const effectiveTools = [...tools, ...filteredBundledTools];
+</code></pre>
+<h3>4.2 Tool Schema Generation (<code>tool-schema-runtime.ts</code>)</h3>
+<p>Provider tool schemas are normalized:</p>
+<pre><code class="language-typescript">const tools = normalizeProviderToolSchemas({
+  tools: toolsEnabled ? toolsRaw : [],
+  provider: params.provider,
+  config: params.config,
+  workspaceDir: effectiveWorkspace,
+  env: process.env,
+  modelId: params.modelId,
+  modelApi: params.model.api,
+  model: params.model,
+});
+</code></pre>
+<h3>4.3 Tool Call Routing</h3>
+<p>Tool calls route based on name:</p>
+<ol>
+<li><strong>Built-in tools</strong> - Core tools like <code>Bash</code>, <code>Read</code>, <code>Write</code>, <code>Edit</code>, <code>Grep</code></li>
+<li><strong>Custom tools</strong> - Agent-defined tools</li>
+<li><strong>MCP tools</strong> - Model Context Protocol tools from plugins</li>
+<li><strong>LSP tools</strong> - Language Server Protocol tools</li>
+<li><strong>Client tools</strong> - OpenResponses hosted tools</li>
+</ol>
+<p>Routing is determined by <code>splitSdkTools()</code> which separates built-in vs custom tools.</p>
+<hr>
+<h2>5. Model Resolution</h2>
+<h3>5.1 Model Selection Flow (<code>model.ts:658-706</code>)</h3>
+<pre><code class="language-typescript">export function resolveModel(
+  provider: string,
+  modelId: string,
+  agentDir?: string,
+  cfg?: OpenClawConfig,
+): {
+  model?: Model&lt;Api&gt;;
+  error?: string;
+  authStorage: AuthStorage;
+  modelRegistry: ModelRegistry;
+} {
+  // 1. Normalize provider and model ID
+  const normalizedRef = {
+    provider: normalizeProviderId(provider),
+    model: normalizeStaticProviderModelId(normalizeProviderId(provider), modelId),
+  };
+  
+  // 2. Resolve agent directory
+  const resolvedAgentDir = agentDir ?? resolveOpenClawAgentDir();
+  
+  // 3. Discover auth storage and model registry
+  const authStorage = discoverAuthStorage(resolvedAgentDir);
+  const modelRegistry = discoverModels(authStorage, resolvedAgentDir);
+  
+  // 4. Resolve with registry
+  const model = resolveModelWithRegistry({
+    provider: normalizedRef.provider,
+    modelId: normalizedRef.model,
+    modelRegistry,
+    cfg,
+    agentDir: resolvedAgentDir,
+  });
+  
+  // 5. If found, return
+  if (model) return { model, authStorage, modelRegistry };
+  
+  // 6. Otherwise, build helpful error
+  return { error: buildUnknownModelError({...}), authStorage, modelRegistry };
+}
+</code></pre>
+<h3>5.2 Provider Fallback Chain</h3>
+<p>Model resolution follows this priority:</p>
+<ol>
+<li><strong>Inline provider models</strong> - Models defined in <code>models.json</code> inline config</li>
+<li><strong>Registry models</strong> - Models discovered from provider plugins</li>
+<li><strong>Dynamic models</strong> - Plugin-provided dynamic model resolution</li>
+<li><strong>Configured fallback</strong> - Provider config fallback models</li>
+</ol>
+<pre><code class="language-typescript">// From resolveModelWithRegistry (model.ts:368-656)
+function resolveModelWithRegistry(params): Model&lt;Api&gt; | undefined {
+  // Priority 1: Explicit model with registry
+  const explicitModel = resolveExplicitModelWithRegistry(params);
+  if (explicitModel?.kind === &quot;resolved&quot;) {
+    // Compare with plugin dynamic model
+    if (shouldCompareProviderRuntimeResolvedModel(...)) {
+      const pluginDynamicModel = resolvePluginDynamicModelWithRegistry(params);
+      return preferProviderRuntimeResolvedModel({
+        explicitModel: explicitModel.model,
+        runtimeResolvedModel: pluginDynamicModel,
+      });
+    }
+    return explicitModel.model;
+  }
+  
+  // Priority 2: Plugin dynamic model only
+  const pluginDynamicModel = resolvePluginDynamicModelWithRegistry(params);
+  if (pluginDynamicModel) return pluginDynamicModel;
+  
+  // Priority 3: Configured fallback
+  return resolveConfiguredFallbackModel(params);
+}
+</code></pre>
+<h3>5.3 Auth Profile Selection</h3>
+<p>Auth profiles are selected via <code>resolveAuthProfileOrder()</code>:</p>
+<pre><code class="language-typescript">const profileOrder = shouldPreferExplicitConfigApiKeyAuth(params.config, provider)
+  ? []  // Use config API key only
+  : resolveAuthProfileOrder({
+      cfg: params.config,
+      store: authStore,
+      provider,
+      preferredProfile: preferredProfileId,
+    });
+
+// Locked profile takes precedence
+const profileCandidates = lockedProfileId
+  ? [lockedProfileId]
+  : profileOrder.length &gt; 0
+    ? profileOrder
+    : [undefined];  // Fall back to keychain/default
+</code></pre>
+<hr>
+<h2>6. Context Engine Integration</h2>
+<p>The context engine manages conversation history and prompt cache. See <code>context-engine-maintenance.ts</code> for lifecycle.</p>
+<h3>6.1 Bootstrap Context Assembly (<code>attempt.context-engine-helpers.ts</code>)</h3>
+<pre><code class="language-typescript">const assembled = await assembleAttemptContextEngine({
+  contextEngine: params.contextEngine,
+  sessionId: params.sessionId,
+  sessionKey: params.sessionKey,
+  messages: activeSession.messages,
+  tokenBudget: params.contextTokenBudget,
+  availableTools: new Set(effectiveTools.map((tool) =&gt; tool.name)),
+  citationsMode: params.config?.memory?.citations,
+  modelId: params.modelId,
+  ...(params.prompt !== undefined ? { prompt: params.prompt } : {}),
+});
+</code></pre>
+<h3>6.2 Post-Turn Finalization (<code>run/attempt.ts:2375-2410</code>)</h3>
+<pre><code class="language-typescript">await finalizeAttemptContextEngineTurn({
+  contextEngine: params.contextEngine,
+  promptError: Boolean(promptError),
+  aborted,
+  yieldAborted,
+  sessionIdUsed,
+  sessionKey: params.sessionKey,
+  sessionFile: params.sessionFile,
+  messagesSnapshot,
+  prePromptMessageCount,
+  tokenBudget: params.contextTokenBudget,
+  runtimeContext: afterTurnRuntimeContext,
+});
+</code></pre>
+<hr>
+<h2>7. Key Files Summary</h2>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Lines</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>run.ts</code></td>
+<td>~2641</td>
+<td>Main orchestrator, retry loop, compaction decision</td>
+</tr>
+<tr>
+<td><code>run/attempt.ts</code></td>
+<td>~2642</td>
+<td>Single attempt execution, stream wrapper chain</td>
+</tr>
+<tr>
+<td><code>run/backend.ts</code></td>
+<td>9</td>
+<td>Backend harness delegation</td>
+</tr>
+<tr>
+<td><code>run/auth-controller.ts</code></td>
+<td>527</td>
+<td>Auth profile lifecycle management</td>
+</tr>
+<tr>
+<td><code>run/payloads.ts</code></td>
+<td>~500</td>
+<td>Response payload construction</td>
+</tr>
+<tr>
+<td><code>compact.ts</code></td>
+<td>~1400</td>
+<td>Session compaction execution</td>
+</tr>
+<tr>
+<td><code>compaction-hooks.ts</code></td>
+<td>~309</td>
+<td>Pre/post compaction hooks</td>
+</tr>
+<tr>
+<td><code>model.ts</code></td>
+<td>~855</td>
+<td>Model resolution and discovery</td>
+</tr>
+<tr>
+<td><code>stream-resolution.ts</code></td>
+<td>128</td>
+<td>Stream function resolution</td>
+</tr>
+<tr>
+<td><code>openai-stream-wrappers.ts</code></td>
+<td>438</td>
+<td>OpenAI-specific stream wrappers</td>
+</tr>
+<tr>
+<td><code>proxy-stream-wrappers.ts</code></td>
+<td>143</td>
+<td>Proxy provider stream wrappers</td>
+</tr>
+<tr>
+<td><code>tool-result-truncation.ts</code></td>
+<td>~700</td>
+<td>Tool result size management</td>
+</tr>
+<tr>
+<td><code>replay-history.ts</code></td>
+<td>~500</td>
+<td>Session history sanitization</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>8. Architectural Diagram</h2>
+<pre><code>┌─────────────────────────────────────────────────────────────────────┐
+│                    runEmbeddedPiAgent() (run.ts)                    │
+│                         ~2641 lines                                  │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │                    Retry Loop (while true)                    │   │
+│  │  ┌────────────────────────────────────────────────────────┐  │   │
+│  │  │  1. advanceAuthProfile() if needed                     │  │   │
+│  │  │  2. runEmbeddedAttemptWithBackend()                     │  │   │
+│  │  │  3. Check results:                                     │  │   │
+│  │  │     - Context overflow → compact → continue            │  │   │
+│  │  │     - Auth error    → rotate profile → continue        │  │   │
+│  │  │     - Rate limit    → escalate to fallback → continue   │  │   │
+│  │  │     - Max retries   → return error payload              │  │   │
+│  │  └────────────────────────────────────────────────────────┘  │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│               runEmbeddedAttempt() (run/attempt.ts)                  │
+│                         ~2642 lines                                  │
+│                                                                     │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ Phase 1: Session Setup                                      │    │
+│  │  - createAgentSession()                                     │    │
+│  │  - createOpenClawCodingTools()                             │    │
+│  │  - buildEmbeddedSystemPrompt()                              │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                              │                                       │
+│                              ▼                                       │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ Phase 2: Stream Wrapper Chain (12 layers)                    │    │
+│  │  1. cacheTrace.wrapStreamFn()                               │    │
+│  │  2. dropThinkingBlocks()                                    │    │
+│  │  3. sanitizeReplayToolCallIds()                             │    │
+│  │  4. downgradeOpenAIReasoningBlocks()                        │    │
+│  │  5. handleSessionsYieldAbort()                              │    │
+│  │  6. sanitizeMalformedToolCalls()                            │    │
+│  │  7. trimToolCallNames() + unknownToolGuard                  │    │
+│  │  8. repairMalformedAnthropicToolArgs()                      │    │
+│  │  9. decodeXaiHtmlEntities()                                │    │
+│  │  10. anthropicPayloadLogger.wrap()                          │    │
+│  │  11. handleSensitiveStopReason()                            │    │
+│  │  12. streamWithIdleTimeout()                                │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                              │                                       │
+│                              ▼                                       │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ Phase 3: Prompt Execution                                   │    │
+│  │  - resolvePromptBuildHookResult()                           │    │
+│  │  - prependBootstrapPromptWarning()                         │    │
+│  │  - session.prompt(effectivePrompt)                         │    │
+│  │  - subscribeEmbeddedPiSession()                            │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                              │                                       │
+│                              ▼                                       │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ Phase 4: Result Collection                                  │    │
+│  │  - Extract assistantTexts                                  │    │
+│  │  - Collect toolMetas                                       │    │
+│  │  - Build usage totals                                      │    │
+│  │  - finalizeAttemptContextEngineTurn()                      │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                     compact.ts (~1400 lines)                        │
+│              (Separate compaction session)                            │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │  1. Create compaction agent session                          │    │
+│  │  2. Build summary prompt                                    │    │
+│  │  3. Run summary through compact session                      │    │
+│  │  4. Truncate session after compaction                        │    │
+│  │  5. Run post-compaction hooks                               │    │
+│  │  6. Return compaction result                                │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────────┘
+</code></pre>
+<hr>
+<h2>9. Key Insights</h2>
+<ol>
+<li><p><strong>Stream wrappers are the interceptor layer</strong> - They transform both requests (sanitizing messages) and behavior (handling errors, timeouts). The chain order matters significantly.</p>
+</li>
+<li><p><strong>Compaction is a separate session</strong> - It doesn&#39;t reuse the main session because compaction modifies the message history that the main session depends on.</p>
+</li>
+<li><p><strong>Auth rotation is profile-based, not key-based</strong> - The system rotates through named auth profiles, each with potentially different credentials, not just API keys.</p>
+</li>
+<li><p><strong>The retry loop and attempt execution are cleanly separated</strong> - <code>runEmbeddedPiAgent()</code> handles retry policy; <code>runEmbeddedAttempt()</code> handles single-shot execution.</p>
+</li>
+<li><p><strong>Tool execution is internal to the agent loop</strong> - Tools execute through the SDK&#39;s internal loop; the runner only collects metadata about what tools were called.</p>
+</li>
+<li><p><strong>Context engine integration is optional</strong> - If <code>params.contextEngine</code> is not provided, the system works without it, falling back to session file-based history management.</p>
+</li>
+</ol>
+
+  </main>
+</body>
+</html>

@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>channel system</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      line-height: 1.6;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px;
+      color: #333;
+    }
+    .sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 250px;
+      height: 100vh;
+      background: #f8f9fa;
+      border-right: 1px solid #ddd;
+      padding: 20px;
+      overflow-y: auto;
+    }
+    .sidebar h3 { margin-top: 0; color: #4f46e5; }
+    .sidebar ul { list-style: none; padding: 0; }
+    .sidebar li { margin: 8px 0; }
+    .sidebar a { color: #333; text-decoration: none; font-size: 14px; }
+    .sidebar a:hover { color: #4f46e5; }
+    .content { margin-left: 270px; padding: 20px; }
+    pre { background: #1f2937; color: #e5e7eb; padding: 15px; border-radius: 8px; overflow-x: auto; }
+    code { background: #e5e7eb; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+    pre code { background: transparent; color: inherit; }
+    blockquote { border-left: 4px solid #4f46e5; background: #f9fafb; padding: 10px 20px; margin: 1em 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+    th { background: #f3f4f6; }
+    h1, h2, h3 { color: #1f2937; }
+    .home-link { font-size: 24px; font-weight: bold; color: #4f46e5; text-decoration: none; }
+    a { color: #4f46e5; }
+    @media (max-width: 768px) {
+      .sidebar { position: static; width: 100%; height: auto; border-right: none; border-bottom: 1px solid #ddd; }
+      .content { margin-left: 0; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="sidebar">
+    <h3><a href="/" class="home-link">OpenClaw</a></h3>
+    <ul>
+  <li><a href="/01-overview">01 - overview</a></li>
+  <li><a href="/02-plugin-system">02 - plugin system</a></li>
+  <li><a href="/03-channel-system">03 - channel system</a></li>
+  <li><a href="/04-provider-system">04 - provider system</a></li>
+  <li><a href="/05-gateway-protocol">05 - gateway protocol</a></li>
+  <li><a href="/06-agent-system">06 - agent system</a></li>
+  <li><a href="/07-acp">07 - acp</a></li>
+  <li><a href="/08-config-system">08 - config system</a></li>
+  <li><a href="/09-memory-system">09 - memory system</a></li>
+  <li><a href="/10-ui-frontend">10 - ui frontend</a></li>
+  <li><a href="/11-tui">11 - tui</a></li>
+  <li><a href="/12-mobile-apps">12 - mobile apps</a></li>
+  <li><a href="/13-bundled-plugins">13 - bundled plugins</a></li>
+  <li><a href="/14-packages">14 - packages</a></li>
+  <li><a href="/15-cli-daemon">15 - cli daemon</a></li>
+  <li><a href="/16-testing">16 - testing</a></li>
+  <li><a href="/17-acp-deep-dive">17 - acp deep dive</a></li>
+  <li><a href="/18-infra-hooks-tasks">18 - infra hooks tasks</a></li>
+  <li><a href="/19-vendor-skills-python">19 - vendor skills python</a></li>
+  <li><a href="/20-plugin-loader-deep-dive">20 - plugin loader deep dive</a></li>
+  <li><a href="/21-channel-deep-dive">21 - channel deep dive</a></li>
+  <li><a href="/22-embedded-runner-deep-dive">22 - embedded runner deep dive</a></li>
+  <li><a href="/23-gateway-server-methods">23 - gateway server methods</a></li>
+  <li><a href="/24-telegram-extension">24 - telegram extension</a></li>
+    </ul>
+  </nav>
+  <main class="content">
+    <h1>Channel System Architecture</h1>
+<blockquote>
+<p><em>Part of the OpenClaw Architecture Analysis — see <a href="./01-overview.md">01-overview.md</a></em></p>
+</blockquote>
+<hr>
+<h2>1. Overview</h2>
+<p>Channels are messaging platform integrations — Telegram bots, Discord bots, Slack apps, Matrix clients, etc. Each channel plugin implements the <code>ChannelPlugin</code> interface, which is one of the most structurally complex plugin types due to the wide variety of optional capability adapters.</p>
+<p>The channel system lives in <code>src/channels/</code> with plugins in <code>extensions/*</code> (e.g., <code>extensions/telegram/</code>, <code>extensions/discord/</code>).</p>
+<hr>
+<h2>2. ChannelPlugin Interface</h2>
+<p>From <code>src/channels/plugins/types.plugin.ts:97</code>:</p>
+<pre><code class="language-typescript">export type ChannelPlugin&lt;
+  ResolvedAccount,
+  Probe,
+  Audit
+&gt; = {
+  id: ChannelId
+  meta: ChannelMeta
+  capabilities: ChannelCapabilities
+  config: ChannelConfigAdapter&lt;ResolvedAccount&gt;
+  setup?: ChannelSetupAdapter
+  pairing?: ChannelPairingAdapter
+  security?: ChannelSecurityAdapter&lt;ResolvedAccount&gt;
+  auth?: ChannelAuthAdapter
+  approvalCapability?: ChannelApprovalCapability
+  outbound?: ChannelOutboundAdapter
+  status?: ChannelStatusAdapter&lt;ResolvedAccount, Probe, Audit&gt;
+  gateway?: ChannelGatewayAdapter&lt;ResolvedAccount&gt;
+  messaging?: ChannelMessagingAdapter
+  streaming?: ChannelStreamingAdapter
+  threading?: ChannelThreadingAdapter
+  groups?: ChannelGroupsAdapter
+  mentions?: ChannelMentionsAdapter
+  heartbeat?: ChannelHeartbeatAdapter
+  actions?: ChannelActionsAdapter
+  resolver?: ChannelResolverAdapter
+  secrets?: ChannelSecretsAdapter
+  allowlist?: ChannelAllowlistAdapter
+  doctor?: ChannelDoctorAdapter
+  bindings?: ChannelBindingsAdapter
+  directory?: ChannelDirectoryAdapter
+  commands?: ChannelCommandsAdapter
+}
+</code></pre>
+<p>All capability adapters are <strong>optional</strong> — a channel plugin only needs to implement the capabilities it actually supports.</p>
+<hr>
+<h2>3. Channel Capability Adapters</h2>
+<h3>3.1 Messaging Adapter</h3>
+<pre><code class="language-typescript">interface ChannelMessagingAdapter {
+  sendMessage(opts: SendMessageOptions): Promise&lt;SendMessageResult&gt;
+  sendMedia?(opts: SendMediaOptions): Promise&lt;SendMessageResult&gt;
+  sendReaction?(opts: SendReactionOptions): Promise&lt;void&gt;
+  onInboundMessage(handler: InboundMessageHandler): void
+  // ...
+}
+</code></pre>
+<p>Core send/receive interface. <code>sendMessage</code> is the primary method for outbound messages. <code>onInboundMessage</code> registers a handler for incoming messages from the channel.</p>
+<h3>3.2 Streaming Adapter</h3>
+<pre><code class="language-typescript">interface ChannelStreamingAdapter {
+  sendMessageStream(opts: StreamSendMessageOptions): AsyncGenerator&lt;StreamChunk, void, unknown&gt;
+}
+</code></pre>
+<p>For channels that support streaming responses — used when the agent produces a long response and the channel can stream it to the user in real-time.</p>
+<h3>3.3 Outbound Adapter</h3>
+<pre><code class="language-typescript">interface ChannelOutboundAdapter {
+  sendPushNotification?(opts: PushNotificationOptions): Promise&lt;void&gt;
+  // Used for proactive bot-initiated messages, not just reactive responses
+}
+</code></pre>
+<p>For push notification capabilities — channels that support the bot initiating conversations.</p>
+<h3>3.4 Security Adapter</h3>
+<pre><code class="language-typescript">interface ChannelSecurityAdapter&lt;ResolvedAccount&gt; {
+  validateSecuritySignature?(opts: ValidateSignatureOptions): Promise&lt;boolean&gt;
+  resolveAccount?(opts: ResolveAccountOptions): Promise&lt;ResolvedAccount&gt;
+  // Handles auth token validation, webhook signature verification, etc.
+}
+</code></pre>
+<p>Handles authentication/authorization for the channel.</p>
+<h3>3.5 Auth Adapter</h3>
+<pre><code class="language-typescript">interface ChannelAuthAdapter {
+  getAuthUrl?(): Promise&lt;string&gt;
+  exchangeCode?(code: string): Promise&lt;AuthResult&gt;
+  refreshToken?(refreshToken: string): Promise&lt;AuthResult&gt;
+  // Channel-specific OAuth flows (Telegram login, Discord OAuth, etc.)
+}
+</code></pre>
+<p>Channel-specific authentication flows separate from the core security adapter.</p>
+<h3>3.6 Setup Adapter</h3>
+<pre><code class="language-typescript">interface ChannelSetupAdapter {
+  validateConfig?(config: unknown): ValidateResult
+  inspectAccount?(config: unknown): Promise&lt;AccountInspection&gt;
+  healthProbe?(config: unknown): Promise&lt;HealthResult&gt;
+}
+</code></pre>
+<p>Channel configuration validation, account inspection, and health checks.</p>
+<h3>3.7 Pairing Adapter</h3>
+<pre><code class="language-typescript">interface ChannelPairingAdapter {
+  startPairing?(opts: StartPairingOptions): Promise&lt;PairingResult&gt;
+  completePairing?(token: string): Promise&lt;void&gt;
+  // For channels that support device pairing (QR code, token exchange, etc.)
+}
+</code></pre>
+<p>Device pairing for channels that support it.</p>
+<h3>3.8 Approval Capability</h3>
+<pre><code class="language-typescript">interface ChannelApprovalCapability {
+  requestApproval?(opts: ApprovalRequestOptions): Promise&lt;ApprovalResult&gt;
+  onApprovalResult?(handler: ApprovalResultHandler): void
+  // For channels where certain actions require user approval
+}
+</code></pre>
+<p>Handles approval request flows (e.g., &quot;User asked to send an email — approve?&quot;). Used by the <code>execApproval</code> system.</p>
+<h3>3.9 Gateway Adapter</h3>
+<pre><code class="language-typescript">interface ChannelGatewayAdapter&lt;ResolvedAccount&gt; {
+  registerGatewayMethod?(method: string, handler: GatewayMethodHandler): void
+  // Allows channels to expose custom gateway RPC methods
+}
+</code></pre>
+<h3>3.10 Other Adapters</h3>
+<table>
+<thead>
+<tr>
+<th>Adapter</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>threading</code></td>
+<td>Thread/topic management</td>
+</tr>
+<tr>
+<td><code>groups</code></td>
+<td>Group chat support</td>
+</tr>
+<tr>
+<td><code>mentions</code></td>
+<td>Mention detection (<code>@bot</code>, <code>#channel</code>)</td>
+</tr>
+<tr>
+<td><code>heartbeat</code></td>
+<td>Keepalive/ping-pong</td>
+</tr>
+<tr>
+<td><code>status</code></td>
+<td>Health/status reporting</td>
+</tr>
+<tr>
+<td><code>secrets</code></td>
+<td>Credential storage</td>
+</tr>
+<tr>
+<td><code>allowlist</code></td>
+<td>Sender allowlisting</td>
+</tr>
+<tr>
+<td><code>doctor</code></td>
+<td>Diagnostic support</td>
+</tr>
+<tr>
+<td><code>bindings</code></td>
+<td>Conversation bindings</td>
+</tr>
+<tr>
+<td><code>directory</code></td>
+<td>Channel directory lookup</td>
+</tr>
+<tr>
+<td><code>resolver</code></td>
+<td>Target resolution</td>
+</tr>
+<tr>
+<td><code>actions</code></td>
+<td>Message actions</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>4. Channel Entry Contract</h2>
+<h3>4.1 defineBundledChannelEntry</h3>
+<p>From <code>src/plugin-sdk/channel-entry-contract.ts:522</code>, the channel entry uses lazy loading:</p>
+<pre><code class="language-typescript">export function defineBundledChannelEntry({
+  id,
+  name,
+  description,
+  importMetaUrl,
+  plugin: { specifier: pluginSpecifier, exportName: pluginExportName },
+  secrets: { specifier: secretsSpecifier, exportName: secretsExportName },
+  runtime: { specifier: runtimeSpecifier, exportName: runtimeExportName },
+  accountInspect: { specifier: accountInspectSpecifier, exportName: accountInspectExportName },
+})
+</code></pre>
+<p>Four separate lazy module references:</p>
+<ol>
+<li><strong><code>plugin</code></strong> — the main <code>ChannelPlugin</code> implementation</li>
+<li><strong><code>secrets</code></strong> — secret contract API (optional)</li>
+<li><strong><code>runtime</code></strong> — runtime setter for injecting <code>PluginRuntime</code></li>
+<li><strong><code>accountInspect</code></strong> — read-only account inspection (optional)</li>
+</ol>
+<h3>4.2 Channel Plugin API (plugin side)</h3>
+<p>Each channel plugin&#39;s <code>channel-plugin-api.js</code> exports a <code>ChannelPlugin</code> instance:</p>
+<pre><code class="language-typescript">// extensions/telegram/src/channel-plugin-api.ts (simplified)
+export const telegramPlugin: ChannelPlugin&lt;
+  TelegramAccount,
+  TelegramProbe,
+  TelegramAudit
+&gt; = {
+  id: &quot;telegram&quot;,
+  meta: { name: &quot;Telegram&quot;, icon: &quot;...&quot; },
+  capabilities: [&quot;messaging&quot;, &quot;streaming&quot;, &quot;security&quot;, &quot;setup&quot;],
+  config: { validateConfig, inspectAccount, healthProbe },
+  security: { validateSecuritySignature, resolveAccount },
+  messaging: { sendMessage, sendMedia, sendReaction, onInboundMessage },
+  streaming: { sendMessageStream },
+  // ...
+}
+</code></pre>
+<h3>4.3 Runtime API (plugin side)</h3>
+<p>The <code>runtime-api.js</code> provides a setter for injecting the core <code>PluginRuntime</code>:</p>
+<pre><code class="language-typescript">// extensions/telegram/src/runtime-api.ts (simplified)
+export function setTelegramRuntime(runtime: PluginRuntime) {
+  // Store runtime for use in plugin implementation
+  // Access to: runtime.subagent, runtime.channel, runtime.acp
+}
+</code></pre>
+<hr>
+<h2>5. Hot Path Rules</h2>
+<p>Per <code>src/channels/AGENTS.md</code>, the hot path rules are:</p>
+<ol>
+<li><strong>Keep async-only surfaces off hot entrypoints</strong> — <code>send</code>, <code>monitor</code>, <code>probe</code>, <code>setup/login</code> should not be on hot code paths (i.e., module-level executes at import time)</li>
+<li><strong>Use small local seams</strong> like <code>channel-api.ts</code> or <code>*.runtime.ts</code> for heavy code — do not mix static initialization with async operations</li>
+<li><strong>Prefer lightweight bundled-plugin artifacts</strong> before falling back to full channel loading</li>
+</ol>
+<hr>
+<h2>6. Channel Core Types</h2>
+<p>Key type files:</p>
+<ul>
+<li><code>src/channels/plugins/types.plugin.ts</code> — <code>ChannelPlugin</code> interface (97 lines)</li>
+<li><code>src/channels/plugins/types.core.ts</code> — core channel types: <code>ChannelMessagingAdapter</code>, <code>ChannelOutboundAdapter</code>, etc.</li>
+<li><code>src/channels/plugins/types.adapters.ts</code> — adapter interfaces for each capability</li>
+</ul>
+<hr>
+<h2>7. Bundled Channel Plugins</h2>
+<p>Complete list of channel plugins in <code>extensions/</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Extension</th>
+<th>Platform</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>telegram</code></td>
+<td>Telegram</td>
+<td>Full messaging + streaming + security</td>
+</tr>
+<tr>
+<td><code>discord</code></td>
+<td>Discord</td>
+<td>Bot channel + subagent hooks</td>
+</tr>
+<tr>
+<td><code>slack</code></td>
+<td>Slack</td>
+<td>HTTP routes</td>
+</tr>
+<tr>
+<td><code>msteams</code></td>
+<td>Microsoft Teams</td>
+<td></td>
+</tr>
+<tr>
+<td><code>mattermost</code></td>
+<td>Mattermost</td>
+<td></td>
+</tr>
+<tr>
+<td><code>matrix</code></td>
+<td>Matrix protocol</td>
+<td></td>
+</tr>
+<tr>
+<td><code>irc</code></td>
+<td>IRC</td>
+<td></td>
+</tr>
+<tr>
+<td><code>feishu</code></td>
+<td>Feishu/Lark</td>
+<td></td>
+</tr>
+<tr>
+<td><code>nextcloud-talk</code></td>
+<td>Nextcloud Talk</td>
+<td></td>
+</tr>
+<tr>
+<td><code>googlechat</code></td>
+<td>Google Chat</td>
+<td></td>
+</tr>
+<tr>
+<td><code>signal</code></td>
+<td>Signal</td>
+<td></td>
+</tr>
+<tr>
+<td><code>twitch</code></td>
+<td>Twitch</td>
+<td>Chat</td>
+</tr>
+<tr>
+<td><code>line</code></td>
+<td>LINE</td>
+<td></td>
+</tr>
+<tr>
+<td><code>qqbot</code></td>
+<td>QQ</td>
+<td></td>
+</tr>
+<tr>
+<td><code>zalo</code></td>
+<td>Zalo</td>
+<td></td>
+</tr>
+<tr>
+<td><code>whatsapp</code></td>
+<td>WhatsApp</td>
+<td></td>
+</tr>
+<tr>
+<td><code>bluebubbles</code></td>
+<td>BlueBubbles</td>
+<td>iMessage</td>
+</tr>
+<tr>
+<td><code>imessage</code></td>
+<td>iMessage</td>
+<td></td>
+</tr>
+<tr>
+<td><code>synology-chat</code></td>
+<td>Synology Chat</td>
+<td></td>
+</tr>
+<tr>
+<td><code>nostr</code></td>
+<td>Nostr</td>
+<td></td>
+</tr>
+</tbody></table>
+<hr>
+<h2>8. Channel-to-Agent Flow</h2>
+<pre><code>User sends message on Telegram
+  → Telegram channel plugin receives via onInboundMessage
+  → Routes to core messaging handler
+  → Core looks up agent session
+  → Agent processes message (calls provider)
+  → Agent produces response
+  → Core sends via channel&#39;s sendMessage
+  → Telegram bot sends reply
+</code></pre>
+<p>The channel plugin handles platform-specific transport (polling webhooks, WebSocket connections, etc.) but the message routing and agent invocation is core.</p>
+<hr>
+<h2>9. Key Files</h2>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Lines</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>src/channels/plugins/types.plugin.ts</code></td>
+<td>97</td>
+<td><code>ChannelPlugin</code> interface</td>
+</tr>
+<tr>
+<td><code>src/channels/plugins/types.core.ts</code></td>
+<td>~200</td>
+<td>Core channel types</td>
+</tr>
+<tr>
+<td><code>src/channels/plugins/types.adapters.ts</code></td>
+<td>~300</td>
+<td>All adapter interfaces</td>
+</tr>
+<tr>
+<td><code>src/plugin-sdk/channel-entry-contract.ts</code></td>
+<td>522</td>
+<td><code>defineBundledChannelEntry()</code> lazy loading</td>
+</tr>
+<tr>
+<td><code>src/plugin-sdk/channel-contract.ts</code></td>
+<td>39</td>
+<td>Pure channel contract types</td>
+</tr>
+<tr>
+<td><code>extensions/telegram/src/channel-plugin-api.ts</code></td>
+<td>~200</td>
+<td>Telegram plugin implementation</td>
+</tr>
+<tr>
+<td><code>extensions/telegram/src/runtime-api.ts</code></td>
+<td>~50</td>
+<td>Telegram runtime setter</td>
+</tr>
+<tr>
+<td><code>src/channels/AGENTS.md</code></td>
+<td>~60</td>
+<td>Channel architecture rules</td>
+</tr>
+</tbody></table>
+
+  </main>
+</body>
+</html>

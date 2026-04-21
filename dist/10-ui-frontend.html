@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ui frontend</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      line-height: 1.6;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px;
+      color: #333;
+    }
+    .sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 250px;
+      height: 100vh;
+      background: #f8f9fa;
+      border-right: 1px solid #ddd;
+      padding: 20px;
+      overflow-y: auto;
+    }
+    .sidebar h3 { margin-top: 0; color: #4f46e5; }
+    .sidebar ul { list-style: none; padding: 0; }
+    .sidebar li { margin: 8px 0; }
+    .sidebar a { color: #333; text-decoration: none; font-size: 14px; }
+    .sidebar a:hover { color: #4f46e5; }
+    .content { margin-left: 270px; padding: 20px; }
+    pre { background: #1f2937; color: #e5e7eb; padding: 15px; border-radius: 8px; overflow-x: auto; }
+    code { background: #e5e7eb; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+    pre code { background: transparent; color: inherit; }
+    blockquote { border-left: 4px solid #4f46e5; background: #f9fafb; padding: 10px 20px; margin: 1em 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+    th { background: #f3f4f6; }
+    h1, h2, h3 { color: #1f2937; }
+    .home-link { font-size: 24px; font-weight: bold; color: #4f46e5; text-decoration: none; }
+    a { color: #4f46e5; }
+    @media (max-width: 768px) {
+      .sidebar { position: static; width: 100%; height: auto; border-right: none; border-bottom: 1px solid #ddd; }
+      .content { margin-left: 0; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="sidebar">
+    <h3><a href="/" class="home-link">OpenClaw</a></h3>
+    <ul>
+  <li><a href="/01-overview">01 - overview</a></li>
+  <li><a href="/02-plugin-system">02 - plugin system</a></li>
+  <li><a href="/03-channel-system">03 - channel system</a></li>
+  <li><a href="/04-provider-system">04 - provider system</a></li>
+  <li><a href="/05-gateway-protocol">05 - gateway protocol</a></li>
+  <li><a href="/06-agent-system">06 - agent system</a></li>
+  <li><a href="/07-acp">07 - acp</a></li>
+  <li><a href="/08-config-system">08 - config system</a></li>
+  <li><a href="/09-memory-system">09 - memory system</a></li>
+  <li><a href="/10-ui-frontend">10 - ui frontend</a></li>
+  <li><a href="/11-tui">11 - tui</a></li>
+  <li><a href="/12-mobile-apps">12 - mobile apps</a></li>
+  <li><a href="/13-bundled-plugins">13 - bundled plugins</a></li>
+  <li><a href="/14-packages">14 - packages</a></li>
+  <li><a href="/15-cli-daemon">15 - cli daemon</a></li>
+  <li><a href="/16-testing">16 - testing</a></li>
+  <li><a href="/17-acp-deep-dive">17 - acp deep dive</a></li>
+  <li><a href="/18-infra-hooks-tasks">18 - infra hooks tasks</a></li>
+  <li><a href="/19-vendor-skills-python">19 - vendor skills python</a></li>
+  <li><a href="/20-plugin-loader-deep-dive">20 - plugin loader deep dive</a></li>
+  <li><a href="/21-channel-deep-dive">21 - channel deep dive</a></li>
+  <li><a href="/22-embedded-runner-deep-dive">22 - embedded runner deep dive</a></li>
+  <li><a href="/23-gateway-server-methods">23 - gateway server methods</a></li>
+  <li><a href="/24-telegram-extension">24 - telegram extension</a></li>
+    </ul>
+  </nav>
+  <main class="content">
+    <h1>Frontend Architecture (Web UI)</h1>
+<blockquote>
+<p><em>Part of the OpenClaw Architecture Analysis — see <a href="./01-overview.md">01-overview.md</a></em></p>
+</blockquote>
+<hr>
+<h2>1. Overview</h2>
+<p>The web UI (<code>ui/</code>) is built with <strong>Lit 3.3.2</strong> — a lightweight Web Components library using tagged template literals, NOT React. It connects to the OpenClaw core via the WebSocket gateway protocol.</p>
+<hr>
+<h2>2. Framework: Lit</h2>
+<h3>2.1 Why Lit?</h3>
+<ul>
+<li><strong>Web Components</strong> — native browser components, no virtual DOM</li>
+<li><strong>Tagged template literals</strong> — HTML-in-JS without JSX</li>
+<li><strong>Lightweight</strong> — ~15KB gzipped vs React&#39;s ~40KB+</li>
+<li><strong>Native</strong> — works with any framework or vanilla JS</li>
+</ul>
+<h3>2.2 Main Component</h3>
+<p><strong>File:</strong> <code>ui/src/ui/app.ts:132</code> (824 lines)</p>
+<pre><code class="language-typescript">@customElement(&quot;openclaw-app&quot;)
+export class OpenClawApp extends LitElement {
+  @state() private state: AppState = { /* ... */ }
+
+  render() {
+    return html`
+      &lt;div class=&quot;app&quot;&gt;
+        ${this.renderHeader()}
+        ${this.renderContent()}
+        ${this.renderSidebar()}
+      &lt;/div&gt;
+    `
+  }
+}
+</code></pre>
+<hr>
+<h2>3. Directory Structure</h2>
+<pre><code>ui/src/
+├── main.ts                     # Bootstrap entry (2 lines)
+├── styles.css                  # Main CSS import
+├── local-storage.ts            # LocalStorage wrapper
+
+├── ui/
+│   ├── app.ts                  # Main &lt;openclaw-app&gt; (824 lines)
+│   ├── app-gateway.ts          # Gateway connection (610 lines)
+│   ├── app-chat.ts             # Chat send/queue (567 lines)
+│   ├── app-render.ts          # Main render (~2400 lines)
+│   ├── app-lifecycle.ts        # Connected/updated/disconnected
+│   ├── app-settings.ts        # Theme, URL, tab settings
+│   ├── app-scroll.ts          # Auto-scroll management
+│   ├── app-polling.ts         # Polling for logs/nodes/debug
+│   ├── app-events.ts          # Event log buffer
+│   ├── app-tool-stream.ts     # Tool streaming state
+│   ├── app-channels.ts        # Channel config handlers
+│   ├── app-defaults.ts        # Default values
+│   ├── gateway.ts             # GatewayBrowserClient (645 lines)
+│   ├── navigation.ts          # Tab routing
+│   ├── storage.ts             # UiSettings persistence
+
+│   ├── controllers/           # Data loading/management
+│   │   ├── chat.ts
+│   │   ├── sessions.ts
+│   │   ├── agents.ts
+│   │   ├── channels.ts
+│   │   ├── config.ts
+│   │   ├── cron.ts
+│   │   ├── nodes.ts
+│   │   ├── logs.ts
+│   │   ├── devices.ts
+│   │   ├── exec-approvals.ts
+│   │   ├── dreaming.ts
+│   │   ├── skills.ts
+│   │   ├── presence.ts
+│   │   ├── debug.ts
+│   │   └── ... (more)
+
+│   ├── views/                 # Lazy-loaded view components
+│   │   ├── chat.ts
+│   │   ├── agents.ts
+│   │   ├── channels.ts
+│   │   ├── sessions.ts
+│   │   ├── cron.ts
+│   │   ├── skills.ts
+│   │   ├── nodes.ts
+│   │   ├── logs.ts
+│   │   ├── config.ts
+│   │   ├── dreaming.ts
+│   │   ├── command-palette.ts
+│   │   ├── overview.ts
+│   │   ├── debug.ts
+│   │   └── usage.ts
+
+│   ├── chat/                  # Chat-specific rendering
+│   │   ├── build-chat-items.ts
+│   │   ├── message-normalizer.ts
+│   │   ├── grouped-render.ts
+│   │   ├── tool-cards.ts
+│   │   ├── slash-commands.ts
+│   │   ├── speech.ts
+│   │   ├── export.ts
+│   │   └── ...
+
+│   └── components/
+│       ├── dashboard-header.ts
+│       └── resizable-divider.ts
+
+├── i18n/
+│   ├── index.ts
+│   ├── locales/
+│   │   ├── en.ts, de.ts, fr.ts, ... (11 locales)
+│   └── lib/
+│       ├── registry.ts
+│       ├── translate.ts
+│       ├── types.ts
+│       └── lit-controller.ts
+</code></pre>
+<hr>
+<h2>4. Gateway Connection</h2>
+<h3>4.1 GatewayBrowserClient</h3>
+<p><strong>File:</strong> <code>ui/src/ui/gateway.ts:289</code> (645 lines)</p>
+<pre><code class="language-typescript">export class GatewayBrowserClient {
+  private ws: WebSocket | null = null
+
+  start() {
+    this.ws = new WebSocket(this.opts.url)
+    this.ws.onmessage = (e) =&gt; this.handleMessage(JSON.parse(e.data))
+    this.ws.onopen = () =&gt; this.onConnected()
+    this.ws.onerror = (e) =&gt; this.onError(e)
+    this.ws.onclose = () =&gt; this.onDisconnected()
+  }
+
+  request&lt;T&gt;(method: string, params?: unknown): Promise&lt;T&gt; {
+    // Sends: { type: &quot;req&quot;, id, method, params }
+    // Returns: Promise that resolves when { type: &quot;res&quot; } arrives
+  }
+
+  onEvent(handler: (event: string, payload: unknown) =&gt; void) {
+    // Registers handler for { type: &quot;event&quot; } messages
+  }
+}
+</code></pre>
+<h3>4.2 Connection Flow</h3>
+<p><strong>File:</strong> <code>ui/src/ui/app-gateway.ts:251-366</code></p>
+<pre><code>1. User enters gateway URL + optional token/password
+2. connectGateway() creates GatewayBrowserClient
+3. Client opens WebSocket
+4. Server sends connect.challenge event
+5. Client responds with gateway.connect method
+6. Server sends hello with snapshot data (session defaults, presence, health)
+7. UI sets up event subscriptions
+</code></pre>
+<h3>4.3 Auth Modes</h3>
+<p>From <code>gateway.ts:95-110</code>:</p>
+<ul>
+<li><strong>Device identity</strong> — Ed25519 key pair from localStorage</li>
+<li><strong>Gateway token</strong> — explicit token from user</li>
+<li><strong>Password</strong> — for <code>gateway.auth.password</code> mode</li>
+</ul>
+<hr>
+<h2>5. Routing</h2>
+<h3>5.1 Tab Groups</h3>
+<p><strong>File:</strong> <code>ui/src/ui/navigation.ts:5-25</code></p>
+<pre><code class="language-typescript">export const TAB_GROUPS = [
+  { label: &quot;chat&quot;, tabs: [&quot;chat&quot;] },
+  { label: &quot;control&quot;, tabs: [&quot;overview&quot;, &quot;channels&quot;, &quot;instances&quot;, &quot;sessions&quot;, &quot;usage&quot;, &quot;cron&quot;] },
+  { label: &quot;agent&quot;, tabs: [&quot;agents&quot;, &quot;skills&quot;, &quot;nodes&quot;, &quot;dreams&quot;] },
+  { label: &quot;settings&quot;, tabs: [&quot;config&quot;, &quot;communications&quot;, &quot;appearance&quot;, &quot;automation&quot;, &quot;infrastructure&quot;, &quot;aiAgents&quot;, &quot;debug&quot;, &quot;logs&quot;] },
+]
+</code></pre>
+<h3>5.2 Path Mapping</h3>
+<p><strong>File:</strong> <code>ui/src/ui/navigation.ts:48-68</code></p>
+<pre><code class="language-typescript">const TAB_PATHS: Record&lt;Tab, string&gt; = {
+  chat: &quot;/chat&quot;,
+  overview: &quot;/overview&quot;,
+  channels: &quot;/channels&quot;,
+  sessions: &quot;/sessions&quot;,
+  cron: &quot;/cron&quot;,
+  // ...
+}
+
+const PATH_TAB: Record&lt;string, Tab&gt; = {
+  &quot;/chat&quot;: &quot;chat&quot;,
+  &quot;/overview&quot;: &quot;overview&quot;,
+  // ...
+}
+</code></pre>
+<h3>5.3 URL Sync</h3>
+<pre><code class="language-typescript">// From app.ts
+connectedCallback() {
+  window.addEventListener(&quot;popstate&quot;, this.onPopState)
+}
+
+private onPopState = () =&gt; {
+  const tab = PATH_TAB[window.location.pathname] ?? &quot;chat&quot;
+  this.state = { ...this.state, tab }
+}
+</code></pre>
+<hr>
+<h2>6. Lazy Views</h2>
+<h3>6.1 Lazy Loading</h3>
+<p><strong>File:</strong> <code>ui/src/ui/app-render.ts:159-174</code></p>
+<pre><code class="language-typescript">const lazyAgents = createLazy(() =&gt; import(&quot;./views/agents.ts&quot;))
+const lazyChannels = createLazy(() =&gt; import(&quot;./views/channels.ts&quot;))
+const lazyCron = createLazy(() =&gt; import(&quot;./views/cron.ts&quot;))
+// ... more
+
+// In render():
+switch (tab) {
+  case &quot;agents&quot;: return lazyAgents()
+  case &quot;channels&quot;: return lazyChannels()
+  case &quot;cron&quot;: return lazyCron()
+  // ...
+}
+</code></pre>
+<h3>6.2 createLazy Implementation</h3>
+<pre><code class="language-typescript">function createLazy&lt;T extends LitElement&gt;(
+  importer: () =&gt; Promise&lt;{ default: new () =&gt; T }&gt;
+): () =&gt; T {
+  let cache: T | null = null
+  return () =&gt; {
+    if (!cache) {
+      // First call: trigger import, show placeholder
+      // Subsequent calls: return cached instance
+    }
+    return cache
+  }
+}
+</code></pre>
+<hr>
+<h2>7. Controllers</h2>
+<p>Controllers manage data loading and state for views:</p>
+<table>
+<thead>
+<tr>
+<th>Controller</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>chat.ts</code></td>
+<td>Chat message list, send queue</td>
+</tr>
+<tr>
+<td><code>sessions.ts</code></td>
+<td>Session list and state</td>
+</tr>
+<tr>
+<td><code>agents.ts</code></td>
+<td>Agent configuration</td>
+</tr>
+<tr>
+<td><code>channels.ts</code></td>
+<td>Channel configuration</td>
+</tr>
+<tr>
+<td><code>config.ts</code></td>
+<td>Global config</td>
+</tr>
+<tr>
+<td><code>cron.ts</code></td>
+<td>Cron job management</td>
+</tr>
+<tr>
+<td><code>nodes.ts</code></td>
+<td>Connected nodes</td>
+</tr>
+<tr>
+<td><code>logs.ts</code></td>
+<td>Log entries</td>
+</tr>
+<tr>
+<td><code>devices.ts</code></td>
+<td>Paired devices</td>
+</tr>
+<tr>
+<td><code>exec-approvals.ts</code></td>
+<td>Approval requests</td>
+</tr>
+<tr>
+<td><code>dreaming.ts</code></td>
+<td>Dream mode</td>
+</tr>
+<tr>
+<td><code>skills.ts</code></td>
+<td>Skill management</td>
+</tr>
+<tr>
+<td><code>presence.ts</code></td>
+<td>Presence state</td>
+</tr>
+<tr>
+<td><code>debug.ts</code></td>
+<td>Debug info</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>8. i18n (Internationalization)</h2>
+<h3>8.1 Locale Structure</h3>
+<p><strong>File:</strong> <code>ui/src/i18n/index.ts</code></p>
+<p>11 locales in <code>ui/src/i18n/locales/</code>:
+<code>en.ts</code>, <code>de.ts</code>, <code>fr.ts</code>, <code>es.ts</code>, <code>pt.ts</code>, <code>zh.ts</code>, <code>ja.ts</code>, <code>ko.ts</code>, <code>ru.ts</code>, <code>ar.ts</code>, <code>hi.ts</code></p>
+<h3>8.2 Translation System</h3>
+<pre><code class="language-typescript">// ui/src/i18n/lib/translate.ts
+export function t(key: string, params?: Record&lt;string, string&gt;): string {
+  const locale = currentLocale()
+  const messages = loadedLocales[locale]
+  return messages[key] ?? key
+}
+</code></pre>
+<h3>8.3 Lit Controller for i18n</h3>
+<pre><code class="language-typescript">// ui/src/i18n/lib/lit-controller.ts
+export class I18nMixin(SuperClass: typeof LitElement) {
+  @property() locale = &quot;en&quot;
+
+  updated(changedProperties: Map&lt;string, unknown&gt;) {
+    if (changedProperties.has(&quot;locale&quot;)) {
+      this.requestUpdate()
+    }
+  }
+}
+</code></pre>
+<hr>
+<h2>9. HTML Entry Point</h2>
+<p><strong>File:</strong> <code>ui/index.html:66</code></p>
+<pre><code class="language-html">&lt;openclaw-app&gt;&lt;/openclaw-app&gt;
+&lt;script type=&quot;module&quot; src=&quot;/src/main.ts&quot;&gt;&lt;/script&gt;
+</code></pre>
+<hr>
+<h2>10. Key Files</h2>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Lines</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>ui/src/ui/app.ts</code></td>
+<td>824</td>
+<td>Main <code>&lt;openclaw-app&gt;</code> component</td>
+</tr>
+<tr>
+<td><code>ui/src/ui/gateway.ts</code></td>
+<td>645</td>
+<td>GatewayBrowserClient WebSocket client</td>
+</tr>
+<tr>
+<td><code>ui/src/ui/app-gateway.ts</code></td>
+<td>610</td>
+<td>Gateway connection management</td>
+</tr>
+<tr>
+<td><code>ui/src/ui/app-chat.ts</code></td>
+<td>567</td>
+<td>Chat send/queue logic</td>
+</tr>
+<tr>
+<td><code>ui/src/ui/app-render.ts</code></td>
+<td>~2400</td>
+<td>Main render (largest file)</td>
+</tr>
+<tr>
+<td><code>ui/src/ui/navigation.ts</code></td>
+<td>~150</td>
+<td>Tab routing</td>
+</tr>
+<tr>
+<td><code>ui/src/main.ts</code></td>
+<td>2</td>
+<td>Bootstrap entry</td>
+</tr>
+<tr>
+<td><code>ui/index.html</code></td>
+<td>~100</td>
+<td>Entry HTML</td>
+</tr>
+</tbody></table>
+
+  </main>
+</body>
+</html>
