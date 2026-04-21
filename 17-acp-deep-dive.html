@@ -45,6 +45,55 @@
       .sidebar { position: static; width: 100%; height: auto; border-right: none; border-bottom: 1px solid #ddd; }
       .content { margin-left: 0; }
     }
+  
+    /* Mobile Responsive */
+    @media (max-width: 768px) {
+      .sidebar {
+        position: relative !important;
+        width: 100% !important;
+        height: auto !important;
+        border-right: none !important;
+        border-bottom: 1px solid #ddd;
+        padding: 10px !important;
+      }
+      .sidebar ul {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .sidebar li {
+        margin: 0 !important;
+      }
+      .sidebar a {
+        font-size: 12px !important;
+        padding: 4px 8px;
+        background: #e5e7eb;
+        border-radius: 4px;
+      }
+      .content {
+        margin-left: 0 !important;
+        padding: 10px !important;
+      }
+      body {
+        padding: 0 !important;
+      }
+      h1 { font-size: 1.5rem !important; }
+      h2 { font-size: 1.3rem !important; }
+      h3 { font-size: 1.1rem !important; }
+      pre {
+        font-size: 12px !important;
+        padding: 10px !important;
+      }
+      table {
+        font-size: 12px !important;
+        display: block;
+        overflow-x: auto;
+      }
+      th, td {
+        padding: 6px !important;
+      }
+    }
+
   </style>
 </head>
 <body>
